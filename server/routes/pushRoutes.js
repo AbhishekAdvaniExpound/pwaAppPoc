@@ -1,5 +1,5 @@
 const express = require("express");
-const { subscribe } = require("../push/subscribe");
+const { subscribe, getAllSubscriptions } = require("../push/subscribe");
 const { sendNotification } = require("../push/sendNotification");
 
 const router = express.Router();
