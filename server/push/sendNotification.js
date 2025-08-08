@@ -9,10 +9,18 @@ const sendNotification = async (req, res) => {
     body: body || "This is a push notification from server 🎉",
   });
 
+  console.log("📨 Sending push notification with payload:", payload);
+  console.log(`🔔 Subscriptions count: ${subscriptions.length}`);
+
   try {
     const results = await Promise.allSettled(
-      subscriptions.map((sub) => webPush.sendNotification(sub, payload))
+      subscriptions.map((sub, index) => {
+        console.log(`➡️ Sending to subscriber ${index + 1}`);
+        return webPush.sendNotification(sub, payload);
+      })
     );
+
+    console.log("✅ Push Results:", results);
 
     res.status(200).json({ success: true, results });
   } catch (error) {
