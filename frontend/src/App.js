@@ -216,19 +216,64 @@ export default function App() {
     try {
       const reg =
         regRef.current || (await navigator.serviceWorker.getRegistration());
-      const sub = await reg?.pushManager?.getSubscription();
-      if (!sub) {
-        toast({ title: "No active subscription", status: "info" });
-        return;
-      }
-      await sub.unsubscribe();
+      if (!reg) throw new Error("No service worker registration found");
+
+      // 1) Unsubscribe push
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) await sub.unsubscribe();
+
       setIsSubscribed(false);
       setLogLines((l) => [
         `🔕 Unsubscribed @ ${new Date().toLocaleTimeString()}`,
         ...l,
       ]);
       toast({ title: "Unsubscribed", status: "success" });
-      refreshSubscriptionCount();
+
+      // 2) Ask browser to check for an updated SW
+      try {
+        await reg.update();
+      } catch {}
+
+      // 3) Promote a new worker if present (waiting OR installing)
+      const candidate = reg.waiting || reg.installing;
+      if (candidate) {
+        candidate.postMessage({ type: "SKIP_WAITING" });
+
+        // Wait until the new SW takes control (with a timeout)
+        await new Promise((resolve) => {
+          let done = false;
+          const onChange = () => {
+            if (done) return;
+            done = true;
+            navigator.serviceWorker.removeEventListener(
+              "controllerchange",
+              onChange
+            );
+            resolve();
+          };
+          const t = setTimeout(() => {
+            if (done) return;
+            done = true;
+            navigator.serviceWorker.removeEventListener(
+              "controllerchange",
+              onChange
+            );
+            resolve(); // continue anyway after timeout
+          }, 3000);
+          navigator.serviceWorker.addEventListener("controllerchange", () => {
+            clearTimeout(t);
+            onChange();
+          });
+        });
+      }
+
+      await refreshSubscriptionCount();
+      toast({
+        title: "App updated",
+        description: "Reloading…",
+        status: "info",
+      });
+      setTimeout(() => window.location.reload(), 400);
     } catch (err) {
       toast({
         title: "Unsubscribe failed",

@@ -1,6 +1,10 @@
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
 
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
+});
+
 self.addEventListener("push", (event) => {
   console.log("[SW] push received", event?.data ? "(with data)" : "(no data)");
 
@@ -16,11 +20,11 @@ self.addEventListener("push", (event) => {
   const title = data.title || "Notification";
   const options = {
     body: data.body || "You have a new message",
-    icon: "/logo192.png", // make sure these files exist
+    icon: "/logo192.png",
     badge: "/logo192.png",
     tag: "pwa-push",
     renotify: true,
-    requireInteraction: true, // keeps the banner visible
+    requireInteraction: true, // some platforms ignore this
     data: { url: "/", ts: Date.now() },
   };
 
@@ -49,4 +53,8 @@ self.addEventListener("notificationclick", (event) => {
         return existing ? existing.focus() : clients.openWindow(url);
       })
   );
+});
+
+self.addEventListener("notificationclose", (event) => {
+  console.log("[SW] notification closed", event.notification?.tag);
 });
