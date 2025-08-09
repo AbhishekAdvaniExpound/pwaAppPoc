@@ -1,32 +1,47 @@
-const { subscriptions } = require("./subscribe");
-const webPush = require("../config/vapid");
+// server/push/sendNotification.js
+const store = require('./store');
+const webPush = require('../config/vapid');
+
+function isStale(err) {
+  const code = err?.statusCode || err?.status;
+  // 404/410 => gone; 400 sometimes appears for malformed/rotated keys
+  return code === 404 || code === 410;
+}
 
 const sendNotification = async (req, res) => {
-  const { title, body } = req.body;
-
+  const { title, body } = req.body || {};
   const payload = JSON.stringify({
     title: title || "Hello!",
-    body: body || "This is a push notification from server 🎉",
+    body: body || "This is a test push 🔔",
   });
 
-  console.log("📨 Sending push notification with payload:", payload);
-  console.log(`🔔 Subscriptions count: ${subscriptions.length}`);
+  const subs = store.subscriptions || [];
+  if (!subs.length) return res.json({ success: true, results: [], staleRemoved: 0 });
 
-  try {
-    const results = await Promise.allSettled(
-      subscriptions.map((sub, index) => {
-        console.log(`➡️ Sending to subscriber ${index + 1}`);
-        return webPush.sendNotification(sub, payload);
-      })
-    );
+  const results = await Promise.allSettled(
+    subs.map((sub) => webPush.sendNotification(sub, payload))
+  );
 
-    console.log("✅ Push Results:", results);
+  // prune stale
+  const fresh = [];
+  let staleRemoved = 0;
+  results.forEach((r, i) => {
+    if (r.status === "rejected" && isStale(r.reason)) {
+      staleRemoved++;
+      // skip adding back
+    } else {
+      fresh.push(subs[i]);
+    }
+  });
+  store.subscriptions = fresh;
 
-    res.status(200).json({ success: true, results });
-  } catch (error) {
-    console.error("❌ Push Error:", error);
-    res.status(500).json({ error: "Failed to send push notifications" });
-  }
+  res.json({
+    success: true,
+    sent: results.filter(r => r.status === "fulfilled").length,
+    failed: results.filter(r => r.status === "rejected").length,
+    staleRemoved,
+    results,
+  });
 };
 
 module.exports = { sendNotification };

@@ -1,36 +1,28 @@
-self.addEventListener("push", (event) => {
-  if (!event.data) return;
+// /sw.js at SITE ROOT
 
-  const data = event.data.json();
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
 
-  const options = {
-    body: data.body || "You have a new notification.",
-    icon: "/icons/icon-192x192.png", // optional, must exist in public/icons/
-    badge: "/icons/icon-192x192.png", // optional
-    data: {
-      url: "/", // used on click
-    },
-  };
-
-  event.waitUntil(
-    self.registration.showNotification(data.title || "Notification", options)
-  );
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch {}
+  const title = data.title || 'Notification';
+  const body  = data.body  || 'You have a new message';
+  event.waitUntil(self.registration.showNotification(title, {
+    body,
+    icon: '/logo192.png',    // or /icons/icon-192.png if you have them
+    badge: '/logo192.png',
+    data: { url: '/', ts: Date.now() },
+  }));
 });
 
-// Handle notification click
-self.addEventListener("notificationclick", (event) => {
+self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-
+  const url = event.notification.data?.url || '/';
   event.waitUntil(
-    clients.matchAll({ type: "window" }).then((clientList) => {
-      for (const client of clientList) {
-        if (client.url === "/" && "focus" in client) {
-          return client.focus();
-        }
-      }
-      if (clients.openWindow) {
-        return clients.openWindow("/");
-      }
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((all) => {
+      const existing = all.find(w => w.url.startsWith(self.location.origin));
+      return existing ? existing.focus() : clients.openWindow(url);
     })
   );
 });
