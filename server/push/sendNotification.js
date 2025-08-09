@@ -1,6 +1,6 @@
 // server/push/sendNotification.js
-const store = require('./store');
-const webPush = require('../config/vapid');
+const store = require("./store");
+const webPush = require("../config/vapid");
 
 function isStale(err) {
   const code = err?.statusCode || err?.status;
@@ -16,7 +16,8 @@ const sendNotification = async (req, res) => {
   });
 
   const subs = store.subscriptions || [];
-  if (!subs.length) return res.json({ success: true, results: [], staleRemoved: 0 });
+  if (!subs.length)
+    return res.json({ success: true, results: [], staleRemoved: 0 });
 
   const results = await Promise.allSettled(
     subs.map((sub) => webPush.sendNotification(sub, payload))
@@ -34,11 +35,15 @@ const sendNotification = async (req, res) => {
     }
   });
   store.subscriptions = fresh;
+  console.log("Server endpoints (last 20 chars):");
+  subs.forEach((s, i) => {
+    console.log(`[${i + 1}/${subs.length}] ...${s.endpoint.slice(-20)}`);
+  });
 
   res.json({
     success: true,
-    sent: results.filter(r => r.status === "fulfilled").length,
-    failed: results.filter(r => r.status === "rejected").length,
+    sent: results.filter((r) => r.status === "fulfilled").length,
+    failed: results.filter((r) => r.status === "rejected").length,
     staleRemoved,
     results,
   });

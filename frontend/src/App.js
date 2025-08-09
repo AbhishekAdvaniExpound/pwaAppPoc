@@ -4,7 +4,6 @@ import {
   Button,
   Badge,
   Container,
-  Flex,
   Grid,
   GridItem,
   Heading,
@@ -47,8 +46,7 @@ const PUBLIC_VAPID_KEY =
   "BMCht6yT0qJktTK-G1eFC56nKbrohESdcx3lpXtvsbU4qDABvciqIbFXG4F40r4fP6ilU94Q3L6qADyQH1Cdmj4";
 
 // ✅ Set API base from environment variable (fallback to Render)
-const API_BASE =
-  process.env.REACT_APP_API_BASE || "http://localhost:5000";
+const API_BASE = process.env.REACT_APP_API_BASE || "http://localhost:5000";
 
 // https://pwaapppoc.onrender.com
 // --- helpers ---
@@ -61,10 +59,14 @@ function urlBase64ToUint8Array(base64String) {
 
 export default function App() {
   const toast = useToast();
+  // const toast = useToast();
+
   const { colorMode, toggleColorMode } = useColorMode();
   const [isSupported, setIsSupported] = useState(false);
   const [isSubscribed, setIsSubscribed] = useState(false);
-  const [permission, setPermission] = useState(Notification?.permission ?? "default");
+  const [permission, setPermission] = useState(
+    Notification?.permission ?? "default"
+  );
   const [installPromptEvent, setInstallPromptEvent] = useState(null);
   const [logLines, setLogLines] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -79,8 +81,10 @@ export default function App() {
 
   const pushStatus = useMemo(() => {
     if (!isSupported) return { label: "Unsupported", colorScheme: "red" };
-    if (permission === "denied") return { label: "Blocked", colorScheme: "red" };
-    if (!isSubscribed) return { label: "Not Subscribed", colorScheme: "orange" };
+    if (permission === "denied")
+      return { label: "Blocked", colorScheme: "red" };
+    if (!isSubscribed)
+      return { label: "Not Subscribed", colorScheme: "orange" };
     return { label: "Subscribed", colorScheme: "green" };
   }, [isSupported, permission, isSubscribed]);
 
@@ -128,14 +132,15 @@ export default function App() {
     };
     window.addEventListener("beforeinstallprompt", onBeforeInstall);
 
-    return () => window.removeEventListener("beforeinstallprompt", onBeforeInstall);
+    return () =>
+      window.removeEventListener("beforeinstallprompt", onBeforeInstall);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // fetch sub count (optional admin insight)
   const refreshSubscriptionCount = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/push/subscriptions`);
+      const res = await fetch(`${API_BASE}/api/push/getAllSubscriptions`);
       if (!res.ok) throw new Error(await res.text());
       const json = await res.json();
       setSubCount(json?.count ?? 0);
@@ -155,7 +160,8 @@ export default function App() {
     if (!isSupported) return;
     setLoading(true);
     try {
-      const reg = regRef.current || (await navigator.serviceWorker.register("/sw.js"));
+      const reg =
+        regRef.current || (await navigator.serviceWorker.register("/sw.js"));
 
       const existing = await reg.pushManager.getSubscription();
       if (existing) {
@@ -175,16 +181,29 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
       });
 
-      if (!res.ok) throw new Error(`Subscribe failed: ${res.status} - ${await res.text()}`);
+      if (!res.ok)
+        throw new Error(
+          `Subscribe failed: ${res.status} - ${await res.text()}`
+        );
 
       setIsSubscribed(true);
-      setLogLines((l) => [`✅ Subscription saved @ ${new Date().toLocaleTimeString()}`, ...l]);
+      setLogLines((l) => [
+        `✅ Subscription saved @ ${new Date().toLocaleTimeString()}`,
+        ...l,
+      ]);
       toast({ title: "Subscribed to push", status: "success" });
       refreshSubscriptionCount();
     } catch (err) {
       console.error(err);
-      toast({ title: "Subscription failed", description: String(err?.message || err), status: "error" });
-      setLogLines((l) => [`❌ Subscribe error: ${String(err?.message || err)}`, ...l]);
+      toast({
+        title: "Subscription failed",
+        description: String(err?.message || err),
+        status: "error",
+      });
+      setLogLines((l) => [
+        `❌ Subscribe error: ${String(err?.message || err)}`,
+        ...l,
+      ]);
     } finally {
       setLoading(false);
     }
@@ -194,7 +213,8 @@ export default function App() {
     if (!isSupported) return;
     setLoading(true);
     try {
-      const reg = regRef.current || (await navigator.serviceWorker.getRegistration());
+      const reg =
+        regRef.current || (await navigator.serviceWorker.getRegistration());
       const sub = await reg?.pushManager?.getSubscription();
       if (!sub) {
         toast({ title: "No active subscription", status: "info" });
@@ -202,11 +222,18 @@ export default function App() {
       }
       await sub.unsubscribe();
       setIsSubscribed(false);
-      setLogLines((l) => [`🔕 Unsubscribed @ ${new Date().toLocaleTimeString()}`, ...l]);
+      setLogLines((l) => [
+        `🔕 Unsubscribed @ ${new Date().toLocaleTimeString()}`,
+        ...l,
+      ]);
       toast({ title: "Unsubscribed", status: "success" });
       refreshSubscriptionCount();
     } catch (err) {
-      toast({ title: "Unsubscribe failed", description: String(err?.message || err), status: "error" });
+      toast({
+        title: "Unsubscribe failed",
+        description: String(err?.message || err),
+        status: "error",
+      });
     } finally {
       setLoading(false);
     }
@@ -217,22 +244,36 @@ export default function App() {
     try {
       const res = await fetch(`${API_BASE}/api/push/notify`, {
         method: "POST",
-        body: JSON.stringify({ title: "Hello!", body: "This is a test push 🔔" }),
+        body: JSON.stringify({
+          title: "Hello!",
+          body: "This is a test push 🔔",
+        }),
         headers: { "Content-Type": "application/json" },
       });
-      if (!res.ok) throw new Error(`Server responded ${res.status}: ${await res.text()}`);
+      if (!res.ok)
+        throw new Error(`Server responded ${res.status}: ${await res.text()}`);
       const result = await res.json();
 
       if (result.success) {
         toast({ title: "Push sent", status: "success" });
-        setLogLines((l) => [`📤 Push sent @ ${new Date().toLocaleTimeString()}`, ...l]);
+        setLogLines((l) => [
+          `📤 Push sent @ ${new Date().toLocaleTimeString()}`,
+          ...l,
+        ]);
       } else {
         toast({ title: "Push failed (server)", status: "warning" });
         setLogLines((l) => [`⚠️ Push failed on server`, ...l]);
       }
     } catch (err) {
-      toast({ title: "Push error", description: String(err?.message || err), status: "error" });
-      setLogLines((l) => [`❌ Push send failed: ${String(err?.message || err)}`, ...l]);
+      toast({
+        title: "Push error",
+        description: String(err?.message || err),
+        status: "error",
+      });
+      setLogLines((l) => [
+        `❌ Push send failed: ${String(err?.message || err)}`,
+        ...l,
+      ]);
     } finally {
       setLoading(false);
     }
@@ -266,7 +307,12 @@ export default function App() {
           <HStack spacing={3}>
             <Icon as={BellOff} />
             <Heading size="md">Push PWA Dashboard</Heading>
-            <Tag size="sm" colorScheme={pushStatus.colorScheme} borderRadius="full" ml={2}>
+            <Tag
+              size="sm"
+              colorScheme={pushStatus.colorScheme}
+              borderRadius="full"
+              ml={2}
+            >
               <TagLabel>{pushStatus.label}</TagLabel>
             </Tag>
             <Spacer />
@@ -282,7 +328,10 @@ export default function App() {
             <Tooltip label="API Base">
               <Tag size="sm" variant="subtle">
                 <TagLabel>
-                  <Icon as={LinkIcon} style={{ verticalAlign: "-2px", marginRight: 6 }} />
+                  <Icon
+                    as={LinkIcon}
+                    style={{ verticalAlign: "-2px", marginRight: 6 }}
+                  />
                   {new URL(API_BASE).host}
                 </TagLabel>
               </Tag>
@@ -301,18 +350,34 @@ export default function App() {
           {/* Left: Actions & Stats */}
           <GridItem>
             <Stack spacing={6}>
-              <Box bg={cardBg} p={5} rounded="2xl" shadow="sm" border="1px solid" borderColor={ring}>
+              <Box
+                bg={cardBg}
+                p={5}
+                rounded="2xl"
+                shadow="sm"
+                border="1px solid"
+                borderColor={ring}
+              >
                 <HStack mb={3} spacing={3}>
                   <Icon as={Cloud} />
                   <Heading size="sm">Push Controls</Heading>
                   <Spacer />
-                  <Badge colorScheme={permission === "granted" ? "green" : permission === "denied" ? "red" : "orange"}>
+                  <Badge
+                    colorScheme={
+                      permission === "granted"
+                        ? "green"
+                        : permission === "denied"
+                        ? "red"
+                        : "orange"
+                    }
+                  >
                     Permission: {permission}
                   </Badge>
                 </HStack>
 
                 <Text color={subtle} mb={4}>
-                  Manage device subscription and send a test push. Install to your home screen for a native feel.
+                  Manage device subscription and send a test push. Install to
+                  your home screen for a native feel.
                 </Text>
 
                 <HStack spacing={3} wrap="wrap">
@@ -320,7 +385,9 @@ export default function App() {
                     leftIcon={<Icon as={Bell} />}
                     colorScheme="blue"
                     onClick={subscribeUser}
-                    isDisabled={!isSupported || isSubscribed || permission === "denied"}
+                    isDisabled={
+                      !isSupported || isSubscribed || permission === "denied"
+                    }
                     isLoading={loading}
                   >
                     {isSubscribed ? "Subscribed" : "Subscribe"}
@@ -335,7 +402,11 @@ export default function App() {
                     Send Test Notification
                   </Button>
 
-                  <Button variant="outline" onClick={unsubscribeUser} isDisabled={!isSubscribed || loading}>
+                  <Button
+                    variant="outline"
+                    onClick={unsubscribeUser}
+                    isDisabled={!isSubscribed || loading}
+                  >
                     Unsubscribe
                   </Button>
 
@@ -358,7 +429,10 @@ export default function App() {
                     <StatLabel>Device Status</StatLabel>
                     <StatNumber>
                       <HStack>
-                        <Icon as={CheckCircle} color={isSubscribed ? "green.400" : "gray.400"} />
+                        <Icon
+                          as={CheckCircle}
+                          color={isSubscribed ? "green.400" : "gray.400"}
+                        />
                         <Text>{isSubscribed ? "Ready" : "Inactive"}</Text>
                       </HStack>
                     </StatNumber>
@@ -373,17 +447,29 @@ export default function App() {
                 </HStack>
               </Box>
 
-              <Box bg={cardBg} p={5} rounded="2xl" shadow="sm" border="1px solid" borderColor={ring}>
+              <Box
+                bg={cardBg}
+                p={5}
+                rounded="2xl"
+                shadow="sm"
+                border="1px solid"
+                borderColor={ring}
+              >
                 <HStack mb={3} spacing={3}>
                   <Icon as={Info} />
                   <Heading size="sm">Quick Tips</Heading>
                 </HStack>
                 <VStack align="start" spacing={2} color={subtle} fontSize="sm">
                   <Text>
-                    • Ensure <Kbd>sw.js</Kbd> is at project root (served at <Code>/sw.js</Code>).
+                    • Ensure <Kbd>sw.js</Kbd> is at project root (served at{" "}
+                    <Code>/sw.js</Code>).
                   </Text>
                   <Text> • Browser must be HTTPS (Render ✅).</Text>
-                  <Text> • If permission is <Code>denied</Code>, clear site permissions to retry.</Text>
+                  <Text>
+                    {" "}
+                    • If permission is <Code>denied</Code>, clear site
+                    permissions to retry.
+                  </Text>
                 </VStack>
               </Box>
             </Stack>
@@ -406,7 +492,11 @@ export default function App() {
                 <Icon as={Repeat} />
                 <Heading size="sm">Activity</Heading>
                 <Spacer />
-                <Button size="sm" variant="ghost" onClick={() => setLogLines([])}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setLogLines([])}
+                >
                   Clear
                 </Button>
               </HStack>
@@ -460,7 +550,9 @@ export default function App() {
               aria-label="Subscribe"
               icon={<Icon as={Bell} />}
               onClick={subscribeUser}
-              isDisabled={!isSupported || isSubscribed || permission === "denied"}
+              isDisabled={
+                !isSupported || isSubscribed || permission === "denied"
+              }
             />
             <IconButton
               aria-label="Send"
