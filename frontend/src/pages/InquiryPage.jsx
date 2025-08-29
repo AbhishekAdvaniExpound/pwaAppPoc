@@ -3,7 +3,6 @@ import {
   Box,
   Flex,
   Heading,
-  VStack,
   Text,
   HStack,
   Button,
