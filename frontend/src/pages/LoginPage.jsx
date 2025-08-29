@@ -8,7 +8,6 @@ import {
   FormControl,
   FormLabel,
   Checkbox,
-  Text,
   VStack,
   HStack,
   Link,
