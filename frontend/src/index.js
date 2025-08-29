@@ -6,7 +6,6 @@ import reportWebVitals from "./reportWebVitals";
 import * as serviceWorkerRegistration from "./serviceWorkerRegistration";
 import { ChakraProvider, ColorModeScript } from "@chakra-ui/react";
 import { BrowserRouter } from "react-router-dom";
-import LoginPage from "./pages/LoginPage";
 import theme from "./theme";
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
