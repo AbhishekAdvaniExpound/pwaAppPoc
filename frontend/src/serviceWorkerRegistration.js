@@ -18,7 +18,7 @@ export function register(config) {
       // Localhost — check if service worker exists
       checkValidServiceWorker(swUrl, config);
       navigator.serviceWorker.ready.then(() => {
-        console.log("✅ PWA is being served from cache by a service worker.");
+        console.log(" PWA is being served from cache by a service worker.");
       });
     } else {
       // Register service worker in production
@@ -53,7 +53,7 @@ function registerValidSW(swUrl, config) {
       };
     })
     .catch((error) => {
-      console.error("❌ Error during service worker registration:", error);
+      console.error(" Error during service worker registration:", error);
     });
 }
 

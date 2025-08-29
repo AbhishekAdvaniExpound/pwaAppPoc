@@ -1,7 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
-const connectDB = require('./config/db');
+const connectDB = require("./config/db");
 
 const pushRoutes = require("./routes/pushRoutes");
 // const pushRoutes = require("./routes/pushRoutes");
@@ -9,13 +9,12 @@ const pushRoutes = require("./routes/pushRoutes");
 const app = express();
 app.use(cors());
 app.use(express.json());
-connectDB(); // ✅ Connect MongoDB
-
+connectDB(); //  Connect MongoDB
 
 app.use("/api/push", pushRoutes);
 
-app.get('/', (req, res) => {
-  res.send('API is running ✅');
+app.get("/", (req, res) => {
+  res.send("API is running ");
 });
 
 const PORT = process.env.PORT || 5000;

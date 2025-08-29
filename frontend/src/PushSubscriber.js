@@ -14,7 +14,7 @@ export default function PushSubscriber() {
             applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY),
           });
 
-          console.log("✅ Push Subscription:", subscription);
+          console.log(" Push Subscription:", subscription);
 
           await fetch("http://localhost:5000/api/push/subscribe", {
             method: "POST",
@@ -24,7 +24,7 @@ export default function PushSubscriber() {
             },
           });
         })
-        .catch((err) => console.error("❌ Push error:", err));
+        .catch((err) => console.error(" Push error:", err));
     }
   }, []);
 

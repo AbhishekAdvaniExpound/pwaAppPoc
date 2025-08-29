@@ -7,5 +7,5 @@ const router = express.Router();
 router.post("/subscribe", subscribe);
 router.post("/notify", sendNotification);
 
-router.get("/getAllSubscriptions", getAllSubscriptions); // ✅ NEW ROUTE
+router.get("/getAllSubscriptions", getAllSubscriptions); //  NEW ROUTE
 module.exports = router;
