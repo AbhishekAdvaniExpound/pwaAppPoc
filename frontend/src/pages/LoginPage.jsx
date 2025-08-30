@@ -177,7 +177,7 @@ export default function LoginPage() {
         </Box>
 
         {/* 🕵️ Hidden Quick Login Button */}
-        <Button
+        {/* <Button
           position="absolute"
           bottom="10px"
           right="10px"
@@ -192,7 +192,7 @@ export default function LoginPage() {
           }}
         >
           Secret Login
-        </Button>
+        </Button> */}
       </Box>
     </Flex>
   );
