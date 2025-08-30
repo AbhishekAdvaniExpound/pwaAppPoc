@@ -2,6 +2,7 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import axios from "axios";
 import { useToast } from "@chakra-ui/react";
+import { API_BASE } from "../api/authApi";
 
 // Create Context
 const AuthContext = createContext();
@@ -20,7 +21,7 @@ export const AuthProvider = ({ children }) => {
     setLoading(true);
     setError("");
     try {
-      const response = await axios.post("http://localhost:5000/api/login", {
+      const response = await axios.post(`${API_BASE}/api/login`, {
         username,
         password,
       });
