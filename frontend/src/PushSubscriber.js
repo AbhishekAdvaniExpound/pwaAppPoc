@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { API_BASE } from "./api/authApi";
 
 const PUBLIC_VAPID_KEY =
   "BMCht6yT0qJktTK-G1eFC56nKbrohESdcx3lpXtvsbU4qDABvciqIbFXG4F40r4fP6ilU94Q3L6qADyQH1Cdmj4";
@@ -16,7 +17,7 @@ export default function PushSubscriber() {
 
           console.log(" Push Subscription:", subscription);
 
-          await fetch("http://localhost:5000/api/push/subscribe", {
+          await fetch(`${API_BASE}/api/push/subscribe`, {
             method: "POST",
             body: JSON.stringify(subscription),
             headers: {
