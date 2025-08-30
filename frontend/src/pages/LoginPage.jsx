@@ -22,7 +22,7 @@ import { useAuth } from "../context/AuthContext";
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const { login, user, loading, error } = useAuth();
+  const { login } = useAuth();
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");

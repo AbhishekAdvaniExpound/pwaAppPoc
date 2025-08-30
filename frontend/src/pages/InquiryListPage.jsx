@@ -48,7 +48,6 @@ import {
 } from "@chakra-ui/react";
 import { useDisclosure } from "@chakra-ui/react";
 import React from "react";
-import { ViewIcon, ViewOffIcon } from "@chakra-ui/icons";
 import { API_BASE } from "../api/authApi";
 
 // Mock Data
@@ -185,7 +184,7 @@ const PUBLIC_VAPID_KEY =
   "BMCht6yT0qJktTK-G1eFC56nKbrohESdcx3lpXtvsbU4qDABvciqIbFXG4F40r4fP6ilU94Q3L6qADyQH1Cdmj4";
 
 export default function InquiryListPage() {
-  const { login, user, loading, error } = useAuth();
+  const { user } = useAuth();
   console.log({ user });
   const [isSubscribed, setIsSubscribed] = useState(false);
 
