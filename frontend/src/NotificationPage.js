@@ -41,12 +41,12 @@ import {
   Repeat,
   Info,
 } from "react-feather";
+import { API_BASE } from "./api/authApi";
 
 const PUBLIC_VAPID_KEY =
   "BMCht6yT0qJktTK-G1eFC56nKbrohESdcx3lpXtvsbU4qDABvciqIbFXG4F40r4fP6ilU94Q3L6qADyQH1Cdmj4";
 
 //  Set API base from environment variable (fallback to Render)
-const API_BASE = "http://localhost:5000";
 
 // https://pwaapppoc.onrender.com
 // --- helpers ---

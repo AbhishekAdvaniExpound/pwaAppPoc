@@ -7,17 +7,20 @@ import * as serviceWorkerRegistration from "./serviceWorkerRegistration";
 import { ChakraProvider, ColorModeScript } from "@chakra-ui/react";
 import { BrowserRouter } from "react-router-dom";
 import theme from "./theme";
+import { AuthProvider } from "./context/AuthContext";
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(
   <React.StrictMode>
-    <ChakraProvider theme={theme}>
-      <BrowserRouter>
-        {" "}
-        <ColorModeScript initialColorMode={theme.config.initialColorMode} />
-        <App />
-      </BrowserRouter>
-    </ChakraProvider>
+    <AuthProvider>
+      <ChakraProvider theme={theme}>
+        <BrowserRouter>
+          {" "}
+          <ColorModeScript initialColorMode={theme.config.initialColorMode} />
+          <App />
+        </BrowserRouter>
+      </ChakraProvider>
+    </AuthProvider>
   </React.StrictMode>
 );
 

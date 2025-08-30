@@ -123,6 +123,24 @@ export default function NegotiationPage() {
           </BreadcrumbItem>
         </Breadcrumb>
 
+        {/* Back Button */}
+
+        {/* <Box
+          rounded="full"
+          p={1}
+          display="flex"
+          justifyContent="left"
+          alignItems="center"
+        >
+          <Button
+            onClick={() => navigate(-1)}
+            variant="outline"
+            w="min-content"
+          >
+            Back to Inquiry
+          </Button>
+        </Box> */}
+
         {/* Sticky Inquiry Header */}
         <Box
           position="sticky"
@@ -205,7 +223,7 @@ export default function NegotiationPage() {
         <VStack spacing={4}>
           <Button
             colorScheme="blue"
-            w="full"
+            w="100px"
             isLoading={loading && action === "Save"}
             onClick={() => {
               setAction("Save");
@@ -214,10 +232,10 @@ export default function NegotiationPage() {
           >
             Save
           </Button>
-          <HStack spacing={4} w="full">
+          <HStack spacing={4} w="min-content">
             <Button
               colorScheme="green"
-              w="full"
+              w="100px"
               isLoading={loading && action === "Approve"}
               onClick={() => {
                 setAction("Approve");
@@ -228,7 +246,7 @@ export default function NegotiationPage() {
             </Button>
             <Button
               colorScheme="red"
-              w="full"
+              w="100px"
               isLoading={loading && action === "Reject"}
               onClick={() => {
                 setAction("Reject");
@@ -241,11 +259,6 @@ export default function NegotiationPage() {
         </VStack>
 
         <Divider my={6} />
-
-        {/* Back Button */}
-        <Button onClick={() => navigate(-1)} variant="outline" w="full">
-          Back to Inquiry
-        </Button>
       </Box>
 
       {/* Confirmation Dialog (extracted into reusable ConfirmDialog) */}

@@ -49,7 +49,7 @@ export default function ConfirmDialog({ isOpen, onClose, action, onConfirm }) {
       isCentered
     >
       <AlertDialogOverlay>
-        <AlertDialogContent>
+        <AlertDialogContent w="70%" borderRadius="2xl" justify="center">
           <AlertDialogHeader fontSize="lg" fontWeight="bold">
             <HStack spacing={2}>
               <Icon as={meta.icon} color={meta.color} boxSize={5} />
@@ -57,21 +57,23 @@ export default function ConfirmDialog({ isOpen, onClose, action, onConfirm }) {
             </HStack>
           </AlertDialogHeader>
 
-          <AlertDialogBody>
+          <AlertDialogBody textAlign="center">
             Are you sure you want to <b>{action}</b>?
           </AlertDialogBody>
 
-          <AlertDialogFooter>
-            <Button ref={cancelRef} onClick={onClose}>
-              No
-            </Button>
-            <Button
-              colorScheme={meta.color.split(".")[0]}
-              onClick={onConfirm}
-              ml={3}
-            >
-              Yes, Confirm
-            </Button>
+          <AlertDialogFooter justifyContent="center">
+            <HStack spacing={4}>
+              <Button borderRadius="2xl" ref={cancelRef} onClick={onClose}>
+                No
+              </Button>
+              <Button
+                borderRadius="2xl"
+                colorScheme={meta.color.split(".")[0]}
+                onClick={onConfirm}
+              >
+                Yes, Confirm
+              </Button>
+            </HStack>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialogOverlay>

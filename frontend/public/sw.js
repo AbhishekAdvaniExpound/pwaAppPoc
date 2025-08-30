@@ -1,3 +1,6 @@
+// sw.js
+
+// --- Lifecycle ---
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
 
@@ -5,6 +8,7 @@ self.addEventListener("message", (event) => {
   if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
 });
 
+// --- Push Handler ---
 self.addEventListener("push", (event) => {
   console.log("[SW] push received", event?.data ? "(with data)" : "(no data)");
 
@@ -14,7 +18,9 @@ self.addEventListener("push", (event) => {
   } catch (e) {
     try {
       data = JSON.parse(event.data?.text?.() ?? "{}");
-    } catch {}
+    } catch {
+      data = {};
+    }
   }
 
   const title = data.title || "Notification";
@@ -24,15 +30,27 @@ self.addEventListener("push", (event) => {
     badge: "/logo192.png",
     tag: "pwa-push",
     renotify: true,
-    requireInteraction: true, // some platforms ignore this
+    requireInteraction: true, // stays visible until dismissed (if supported)
     data: { url: "/", ts: Date.now() },
   };
 
   event.waitUntil(
     (async () => {
       try {
+        // 1) Show native notification
         await self.registration.showNotification(title, options);
         console.log("[SW] notification shown");
+
+        // 2) Broadcast to all open clients (React tabs/windows)
+        const allClients = await clients.matchAll({
+          includeUncontrolled: true,
+        });
+        allClients.forEach((client) => {
+          client.postMessage({
+            type: "PUSH_RECEIVED",
+            payload: { title, body: options.body, ts: Date.now() },
+          });
+        });
       } catch (err) {
         console.error("[SW] showNotification error", err);
       }
@@ -40,6 +58,7 @@ self.addEventListener("push", (event) => {
   );
 });
 
+// --- Notification Click ---
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const url = event.notification.data?.url || "/";
@@ -55,6 +74,7 @@ self.addEventListener("notificationclick", (event) => {
   );
 });
 
+// --- Notification Close ---
 self.addEventListener("notificationclose", (event) => {
   console.log("[SW] notification closed", event.notification?.tag);
 });

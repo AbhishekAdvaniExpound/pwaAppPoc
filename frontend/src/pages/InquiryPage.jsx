@@ -16,12 +16,14 @@ import {
   Breadcrumb,
   BreadcrumbItem,
   BreadcrumbLink,
+  IconButton,
 } from "@chakra-ui/react";
 import {
   StarIcon,
   EditIcon,
   CheckCircleIcon,
   CloseIcon,
+  DownloadIcon,
 } from "@chakra-ui/icons";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useState } from "react";
@@ -83,7 +85,7 @@ export default function InquiryDetailPage() {
 
   return (
     <Flex minH="100vh" bg={pageBg} justify="center">
-      <Box w="100%" maxW="1000px" bg={cardBg} rounded="2xl" shadow="xl" p={6}>
+      <Box w="100%" maxW="100%" bg={cardBg} rounded="2xl" shadow="xl" p={6}>
         {/* 🔹 Breadcrumbs */}
         <Breadcrumb fontSize="sm" mb={4} color={textColor}>
           <BreadcrumbItem>
@@ -101,16 +103,34 @@ export default function InquiryDetailPage() {
           </BreadcrumbItem>
         </Breadcrumb>
 
+        <Flex justify="flex-end" mb={4}>
+          <Tooltip label="View PDF" hasArrow>
+            <IconButton
+              aria-label="View PDF"
+              icon={<DownloadIcon boxSize={3} />}
+              colorScheme="red" // 🔴 gives that PDF feel
+              variant="solid"
+              rounded="full" // ✅ makes it circular
+              size="sm"
+              shadow="md"
+              _hover={{ transform: "scale(1.1)", shadow: "lg" }}
+              _active={{ transform: "scale(0.95)" }}
+            />
+          </Tooltip>
+        </Flex>
+
         {/* 🔹 Sticky Inquiry Header */}
         <Box
           position="sticky"
           top="0"
           bg={cardBg}
           zIndex="10"
-          p={3}
-          borderBottom="1px solid"
+          border="1px solid"
           borderColor={borderColor}
           mb={4}
+          p={4}
+          rounded="lg"
+          shadow="sm"
         >
           <HStack spacing={3}>
             <Icon as={StarIcon} color="red.500" />
@@ -122,11 +142,6 @@ export default function InquiryDetailPage() {
             {inquiry.sales}
           </Text>
         </Box>
-
-        {/* PDF Button */}
-        <Button colorScheme="blue" w="full" mb={6}>
-          Display Detailed PDF
-        </Button>
 
         {/* 🔹 Item Grid Layout */}
         <Heading size="md" mb={4} color={textColor}>

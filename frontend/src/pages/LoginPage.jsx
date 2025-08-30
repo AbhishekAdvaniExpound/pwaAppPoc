@@ -18,9 +18,11 @@ import {
 } from "@chakra-ui/react";
 import { EmailIcon, LockIcon } from "@chakra-ui/icons";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const { login, user, loading, error } = useAuth();
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -28,6 +30,7 @@ export default function LoginPage() {
 
   const handleLogin = (e) => {
     e.preventDefault();
+    login(username, password);
     navigate("/inquiries");
   };
 
@@ -50,6 +53,7 @@ export default function LoginPage() {
         shadow="lg"
         overflow="hidden"
         bg={cardBg}
+        position="relative"
       >
         {/* Curved Header with logo + wave */}
         <Box
@@ -171,6 +175,24 @@ export default function LoginPage() {
             </VStack>
           </form>
         </Box>
+
+        {/* 🕵️ Hidden Quick Login Button */}
+        <Button
+          position="absolute"
+          bottom="10px"
+          right="10px"
+          size="xs"
+          variant="ghost"
+          opacity={0} // invisible but clickable
+          // _hover={{ opacity: 0.2 }}
+
+          onClick={() => {
+            login("demo_user", "demo_pass");
+            navigate("/inquiries");
+          }}
+        >
+          Secret Login
+        </Button>
       </Box>
     </Flex>
   );

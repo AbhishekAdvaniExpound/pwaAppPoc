@@ -16,6 +16,8 @@ import {
   SimpleGrid,
   Tooltip,
   IconButton,
+  Badge,
+  Switch,
 } from "@chakra-ui/react";
 import {
   StarIcon,
@@ -25,9 +27,29 @@ import {
   WarningIcon,
   TimeIcon,
   CheckCircleIcon,
+  ArrowLeftIcon,
+  ArrowRightIcon,
 } from "@chakra-ui/icons";
+import { LayoutGrid, List } from "lucide-react"; // install lucide-react if not already
+
 import { useState, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
+import { Bell, BellOff } from "react-feather"; // feather icons look better
+import { useEffect } from "react";
+import {
+  Drawer,
+  DrawerOverlay,
+  DrawerContent,
+  DrawerHeader,
+  DrawerBody,
+  DrawerCloseButton,
+  VStack,
+} from "@chakra-ui/react";
+import { useDisclosure } from "@chakra-ui/react";
+import React from "react";
+import { ViewIcon, ViewOffIcon } from "@chakra-ui/icons";
+import { API_BASE } from "../api/authApi";
 
 // Mock Data
 // Mock Data
@@ -152,13 +174,32 @@ const InquiryCard = ({
     </Box>
   );
 };
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
+}
+const PUBLIC_VAPID_KEY =
+  "BMCht6yT0qJktTK-G1eFC56nKbrohESdcx3lpXtvsbU4qDABvciqIbFXG4F40r4fP6ilU94Q3L6qADyQH1Cdmj4";
+
 export default function InquiryListPage() {
+  const { login, user, loading, error } = useAuth();
+  console.log({ user });
+  const [isSubscribed, setIsSubscribed] = useState(false);
+
   const { colorMode, toggleColorMode } = useColorMode();
   const [filter, setFilter] = useState("All");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const navigate = useNavigate();
-
+  const [viewMode, setViewMode] = useState(() => {
+    return localStorage.getItem("viewMode") || "grid";
+  });
+  useEffect(() => {
+    localStorage.setItem("viewMode", viewMode);
+  }, [viewMode]);
   const pageSize = 6;
 
   // Debounced search handler
@@ -188,6 +229,56 @@ export default function InquiryListPage() {
     startIndex + pageSize
   );
 
+  useEffect(() => {
+    if ("serviceWorker" in navigator && "PushManager" in window) {
+      (async () => {
+        const reg = await navigator.serviceWorker.getRegistration();
+        const sub = await reg?.pushManager.getSubscription();
+        setIsSubscribed(Boolean(sub));
+      })();
+    }
+  }, []);
+
+  const subscribeUser = async () => {
+    try {
+      const reg =
+        (await navigator.serviceWorker.getRegistration()) ||
+        (await navigator.serviceWorker.register("/sw.js"));
+
+      const existing = await reg.pushManager.getSubscription();
+      if (existing) {
+        setIsSubscribed(true);
+        return;
+      }
+
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY),
+      });
+
+      await fetch(`${API_BASE}/api/push/subscribe`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(sub),
+      });
+
+      setIsSubscribed(true);
+    } catch (err) {
+      console.error("Subscribe failed", err);
+    }
+  };
+
+  const unsubscribeUser = async () => {
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      const sub = await reg?.pushManager.getSubscription();
+      if (sub) await sub.unsubscribe();
+      setIsSubscribed(false);
+    } catch (err) {
+      console.error("Unsubscribe failed", err);
+    }
+  };
+
   // 🌗 Dynamic colors
   const pageBg = useColorModeValue("gray.100", "gray.900");
   const cardBg = useColorModeValue("white", "gray.800");
@@ -195,6 +286,20 @@ export default function InquiryListPage() {
   const textColor = useColorModeValue("gray.800", "gray.100");
   const textHeadingColor = useColorModeValue("black", "white");
   const subText = useColorModeValue("gray.600", "gray.400");
+  const { isOpen, onOpen, onClose } = useDisclosure();
+  const [history, setHistory] = useState([]);
+
+  // Fake history demo, you’d append real pushes here
+  useEffect(() => {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.addEventListener("message", (event) => {
+        if (event.data?.type === "PUSH_RECEIVED") {
+          const { title, body, ts } = event.data.payload;
+          setHistory((prev) => [{ id: ts, title, body }, ...prev]);
+        }
+      });
+    }
+  }, []);
 
   return (
     <Flex minH="100vh" bg={pageBg} direction="column">
@@ -209,21 +314,70 @@ export default function InquiryListPage() {
         borderBottom="1px solid"
         borderColor={borderColor}
       >
-        <HStack justify="space-between">
+        <HStack justify="space-between" w="100%">
           <Heading
-            size="lg"
+            size="md"
             bgClip="text"
-            fontWeight="extrabold"
+            fontWeight="bold"
             color={textHeadingColor}
           >
-            Pending Inquiries
+            Welcome {user},
+            <br />
+            <p fontWeight="Normal"> Here are your Pending Inquiries</p>
           </Heading>
-          <IconButton
-            aria-label="Toggle theme"
-            icon={colorMode === "light" ? <MoonIcon /> : <SunIcon />}
-            onClick={toggleColorMode}
-            variant="ghost"
-          />
+
+          <HStack spacing={2}>
+            {/* 🔔 Notification Bell with Badge */}
+            <Box position="relative">
+              <Tooltip
+                label={
+                  isSubscribed
+                    ? "View Notifications"
+                    : "Subscribe to notifications"
+                }
+              >
+                <IconButton
+                  aria-label="Push Notifications"
+                  icon={<Icon as={Bell} />}
+                  onClick={onOpen} // open drawer
+                  variant="ghost"
+                  size="lg"
+                  rounded="full"
+                />
+              </Tooltip>
+
+              {/* Badge overlay */}
+              {history.length > 0 && (
+                <Badge
+                  colorScheme="red"
+                  rounded="full"
+                  position="absolute"
+                  top="1"
+                  right="1"
+                  fontSize="0.7em"
+                  px={1.5}
+                >
+                  {history.length}
+                </Badge>
+              )}
+            </Box>
+
+            {/* 🌙 / ☀️ Theme Toggle */}
+            <Tooltip
+              label={`Switch to ${
+                colorMode === "light" ? "dark" : "light"
+              } mode`}
+            >
+              <IconButton
+                aria-label="Toggle theme"
+                icon={colorMode === "light" ? <MoonIcon /> : <SunIcon />}
+                onClick={toggleColorMode}
+                variant="ghost"
+                size="lg"
+                rounded="full"
+              />
+            </Tooltip>
+          </HStack>
         </HStack>
 
         {/* Filters */}
@@ -259,23 +413,100 @@ export default function InquiryListPage() {
 
       {/* Inquiry Grid */}
       <Box flex="1" p={8}>
-        {paginatedInquiries.length > 0 ? (
-          <SimpleGrid columns={{ base: 1, md: 2 }} spacing={6}>
-            {paginatedInquiries.map((inq, index) => (
-              <InquiryCard
-                key={inq.id}
-                inquiry={inq}
-                index={index}
-                cardBg={cardBg}
-                borderColor={borderColor}
-                subText={subText}
-                textColor={textColor}
-                onClick={(inquiry) =>
-                  navigate("/InquiryDetailPage", { state: { inquiry } })
-                }
+        <HStack justify="flex-end" px={8} mb={4}>
+          <ButtonGroup size="sm" isAttached rounded="full" variant="outline">
+            <Tooltip label="Grid View">
+              <IconButton
+                aria-label="Grid View"
+                icon={<LayoutGrid size={16} />}
+                variant={viewMode === "grid" ? "solid" : "ghost"}
+                colorScheme="blue"
+                onClick={() => setViewMode("grid")}
+                rounded="full"
               />
-            ))}
-          </SimpleGrid>
+            </Tooltip>
+
+            <Tooltip label="List View">
+              <IconButton
+                aria-label="List View"
+                icon={<List size={16} />}
+                variant={viewMode === "list" ? "solid" : "ghost"}
+                colorScheme="blue"
+                onClick={() => setViewMode("list")}
+                rounded="full"
+              />
+            </Tooltip>
+          </ButtonGroup>
+        </HStack>
+        {paginatedInquiries.length > 0 ? (
+          viewMode === "grid" ? (
+            // --- Grid View ---
+            <SimpleGrid columns={{ base: 1, md: 2 }} spacing={6}>
+              {paginatedInquiries.map((inq, index) => (
+                <InquiryCard
+                  key={inq.id}
+                  inquiry={inq}
+                  index={index}
+                  cardBg={cardBg}
+                  borderColor={borderColor}
+                  subText={subText}
+                  textColor={textColor}
+                  onClick={(inquiry) =>
+                    navigate("/InquiryDetailPage", { state: { inquiry } })
+                  }
+                />
+              ))}
+            </SimpleGrid>
+          ) : (
+            // --- List View ---
+            <VStack spacing={2} align="stretch">
+              {paginatedInquiries.map((inq, index) => (
+                <Flex
+                  key={inq.id}
+                  p={4}
+                  rounded="md"
+                  shadow="sm"
+                  bg={cardBg}
+                  border="1px solid"
+                  borderColor={borderColor}
+                  justify="space-between"
+                  align="center"
+                  _hover={{ shadow: "md", cursor: "pointer" }}
+                  onClick={() =>
+                    navigate("/InquiryDetailPage", { state: { inquiry: inq } })
+                  }
+                >
+                  <HStack spacing={4}>
+                    <Icon
+                      as={StarIcon}
+                      boxSize={4}
+                      color={index % 2 === 0 ? "#1E3C7B" : "#7B1E1E"}
+                    />
+                    <Box>
+                      <Text fontWeight="bold" color={textColor}>
+                        {inq.id} ({inq.qty})
+                      </Text>
+                      <Text fontSize="sm" color={subText} noOfLines={1}>
+                        {inq.customer}
+                      </Text>
+                    </Box>
+                  </HStack>
+
+                  <Badge
+                    colorScheme={
+                      inq.status === "High Priority"
+                        ? "red"
+                        : inq.status === "Pending"
+                        ? "orange"
+                        : "green"
+                    }
+                  >
+                    {inq.status}
+                  </Badge>
+                </Flex>
+              ))}
+            </VStack>
+          )
         ) : (
           <Flex
             align="center"
@@ -297,37 +528,75 @@ export default function InquiryListPage() {
       {/* Pagination */}
       {totalPages > 1 && (
         <HStack justify="space-between" px={8} py={4}>
+          {/* Left: Info */}
           <Text fontSize="sm" color={subText}>
             Showing {startIndex + 1} –{" "}
             {Math.min(startIndex + pageSize, filteredInquiries.length)} of{" "}
             {filteredInquiries.length}
           </Text>
-          <ButtonGroup size="sm" isAttached variant="outline">
-            <Button onClick={() => setPage(1)} isDisabled={page === 1}>
-              First
-            </Button>
-            <Button
+
+          {/* Right: Pagination Controls */}
+          <HStack spacing={1}>
+            {/* <IconButton
+              size="sm"
+              variant="ghost"
+              aria-label="First Page"
+              icon={<ChevronLeftIcon />}
+              onClick={() => setPage(1)}
+              isDisabled={page === 1}
+            /> */}
+
+            <IconButton
+              size="sm"
+              variant="ghost"
+              aria-label="Previous Page"
+              icon={<ArrowLeftIcon />}
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               isDisabled={page === 1}
-            >
-              Prev
-            </Button>
-            <Button colorScheme="blue">
-              {page} / {totalPages}
-            </Button>
-            <Button
+            />
+
+            {/* Page Numbers */}
+            {Array.from({ length: totalPages }, (_, i) => i + 1)
+              .filter(
+                (p) => p === 1 || p === totalPages || Math.abs(p - page) <= 1 // show first, last, and around current
+              )
+              .map((p, idx, arr) => (
+                <React.Fragment key={p}>
+                  {/* Ellipsis before skipped pages */}
+                  {idx > 0 && arr[idx - 1] !== p - 1 && (
+                    <Text px={2} color={subText}>
+                      …
+                    </Text>
+                  )}
+                  <Button
+                    size="sm"
+                    variant={p === page ? "solid" : "ghost"}
+                    colorScheme={p === page ? "blue" : "gray"}
+                    onClick={() => setPage(p)}
+                  >
+                    {p}
+                  </Button>
+                </React.Fragment>
+              ))}
+
+            <IconButton
+              size="sm"
+              variant="ghost"
+              aria-label="Next Page"
+              icon={<ArrowRightIcon />}
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               isDisabled={page === totalPages}
-            >
-              Next
-            </Button>
-            <Button
+            />
+
+            {/* <IconButton
+              size="sm"
+              variant="ghost"
+              aria-label="Last Page"
+              icon={<ChevronRightIcon />}
               onClick={() => setPage(totalPages)}
               isDisabled={page === totalPages}
-            >
-              Last
-            </Button>
-          </ButtonGroup>
+            /> */}
+          </HStack>
         </HStack>
       )}
 
@@ -335,6 +604,139 @@ export default function InquiryListPage() {
       <Text fontSize="xs" textAlign="center" color={subText} pb={4}>
         Inquiry list powered by DNH API
       </Text>
+      <Drawer isOpen={isOpen} placement="right" onClose={onClose} size="sm">
+        <DrawerOverlay />
+        <DrawerContent bg={pageBg}>
+          <DrawerCloseButton />
+
+          {/* 🔔 Header with count */}
+          <DrawerHeader borderBottomWidth="1px" borderColor={borderColor}>
+            <HStack justify="space-between" w="100%">
+              {/* Left side: Icon + Label */}
+              <HStack spacing={2}>
+                {/* 🔔 Notification Bell with Badge */}
+                <Box position="relative">
+                  <Tooltip
+                    label={
+                      isSubscribed
+                        ? "View Notifications"
+                        : "Subscribe to notifications"
+                    }
+                  >
+                    <IconButton
+                      aria-label="Push Notifications"
+                      icon={<Icon as={Bell} />}
+                      onClick={onOpen} // open drawer
+                      variant="ghost"
+                      size="lg"
+                      rounded="full"
+                    />
+                  </Tooltip>
+
+                  {/* Badge overlay */}
+                  {history.length > 0 && (
+                    <Badge
+                      colorScheme="red"
+                      rounded="full"
+                      position="absolute"
+                      top="1"
+                      right="1"
+                      fontSize="0.7em"
+                      px={1.5}
+                    >
+                      {history.length}
+                    </Badge>
+                  )}
+                </Box>
+                <Text fontWeight="bold" fontSize="md">
+                  Notifications
+                </Text>
+              </HStack>
+
+              {/* Right side: Count + Clear */}
+            </HStack>
+          </DrawerHeader>
+
+          <DrawerBody px={4} py={5}>
+            {/* Subscribe / Unsubscribe */}
+            <HStack mb={5} justify="space-between" align="center">
+              <HStack spacing={2}>
+                <Icon as={Bell} color="blue.500" boxSize={4} />
+                <Text fontSize="sm" color={subText} fontWeight="medium">
+                  Push Notifications
+                </Text>
+              </HStack>
+
+              <HStack spacing={2}>
+                <Text fontSize="xs" color={subText}>
+                  {isSubscribed ? "On" : "Off"}
+                </Text>
+                <Switch
+                  colorScheme="blue"
+                  isChecked={isSubscribed}
+                  onChange={isSubscribed ? unsubscribeUser : subscribeUser}
+                />
+              </HStack>
+            </HStack>
+
+            {history.length > 0 && (
+              <Button
+                size="xs"
+                variant="ghost"
+                colorScheme="blue"
+                onClick={() => setHistory([])}
+              >
+                Clear
+              </Button>
+            )}
+            {/* Notifications list */}
+            {history.length === 0 ? (
+              <Flex
+                align="center"
+                justify="center"
+                h="60%"
+                color={subText}
+                direction="column"
+              >
+                <Icon as={BellOff} boxSize={8} mb={2} opacity={0.5} />
+                <Text>No notifications yet…</Text>
+              </Flex>
+            ) : (
+              <VStack align="stretch" spacing={4}>
+                {history.map((h) => (
+                  <Box
+                    key={h.id}
+                    p={4}
+                    rounded="xl"
+                    shadow="sm"
+                    border="1px solid"
+                    borderColor={borderColor}
+                    bg={cardBg}
+                    _hover={{ shadow: "md", transform: "scale(1.01)" }}
+                    transition="all 0.2s"
+                  >
+                    <Text fontWeight="semibold" mb={1}>
+                      {h.title}
+                    </Text>
+                    <Text fontSize="sm" color={subText} noOfLines={2}>
+                      {h.body}
+                    </Text>
+                    <Text
+                      fontSize="xs"
+                      mt={2}
+                      color="gray.500"
+                      textAlign="right"
+                      fontStyle="italic"
+                    >
+                      {new Date(h.id).toLocaleString()}
+                    </Text>
+                  </Box>
+                ))}
+              </VStack>
+            )}
+          </DrawerBody>
+        </DrawerContent>
+      </Drawer>
     </Flex>
   );
 }

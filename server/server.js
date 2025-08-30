@@ -4,7 +4,7 @@ require("dotenv").config();
 const connectDB = require("./config/db");
 
 const pushRoutes = require("./routes/pushRoutes");
-// const pushRoutes = require("./routes/pushRoutes");
+const loginRoutes = require("./routes/loginRoutes");
 
 const app = express();
 app.use(cors());
@@ -12,6 +12,7 @@ app.use(express.json());
 connectDB(); //  Connect MongoDB
 
 app.use("/api/push", pushRoutes);
+app.use("/api", loginRoutes);
 
 app.get("/", (req, res) => {
   res.send("API is running ");
