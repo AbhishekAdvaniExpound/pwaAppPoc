@@ -19,6 +19,7 @@ import {
 import { EmailIcon, LockIcon } from "@chakra-ui/icons";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { useInquiries } from "../context/InquiryContext";
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -27,8 +28,10 @@ export default function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
+  const { inquiries } = useInquiries();
 
   const handleLogin = (e) => {
+    localStorage.setItem("selectedInquiry", JSON.stringify(inquiries));
     e.preventDefault();
     login(username, password);
     navigate("/inquiries");

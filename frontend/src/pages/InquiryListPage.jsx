@@ -30,10 +30,10 @@ import {
   ArrowLeftIcon,
   ArrowRightIcon,
 } from "@chakra-ui/icons";
-import { LayoutGrid, List } from "lucide-react"; // install lucide-react if not already
+import { LayoutGrid, List, LogOut } from "lucide-react"; // install lucide-react if not already
 
 import { useState, useMemo, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Bell, BellOff } from "react-feather"; // feather icons look better
 import { useEffect } from "react";
@@ -49,43 +49,22 @@ import {
 import { useDisclosure } from "@chakra-ui/react";
 import React from "react";
 import { API_BASE } from "../api/authApi";
+import { useInquiries } from "../context/InquiryContext";
 
 // Mock Data
 // Mock Data
-const inquiries = Array.from({ length: 42 }, (_, i) => ({
-  id: `Inq-${i + 1}`,
-  qty: 10 + i, // just to vary a bit
-  customer: `Customer Name with longer text that may overflow (${i + 1})`,
-  broker: i % 2 === 0 ? `Broker Name with longer text too (${i + 1})` : null,
-  sales: `Sales Person (${i + 1})`,
-  status: i % 3 === 0 ? "High Priority" : i % 3 === 1 ? "Pending" : "Normal",
 
-  // 🔹 Added items array
-  items: [
-    {
-      id: 1,
-      name: `Item A${i + 1}`,
-      qty: 20 + i,
-      rate: 100 + i,
-      grade: (i % 5) + 1,
-      winding: 10 + (i % 3) * 5,
-      pq: i % 2 === 0 ? "Yes" : "No",
-      clq: i % 2 === 1 ? "Yes" : "No",
-      lastRate: 95 + i,
-    },
-    {
-      id: 2,
-      name: `Item B${i + 1}`,
-      qty: 15 + i,
-      rate: 120 + i,
-      grade: (i % 5) + 1,
-      winding: 15 + (i % 3) * 5,
-      pq: i % 2 === 0 ? "Yes" : "No",
-      clq: i % 2 === 1 ? "Yes" : "No",
-      lastRate: 110 + i,
-    },
-  ],
-}));
+function normalizeInquiry(inq, idx) {
+  return {
+    id: inq.id || `Inq-${idx + 1}`,
+    qty: inq.qty || 0,
+    customer: inq.customer || "Unknown Customer",
+    broker: inq.broker || "",
+    sales: inq.sales || "N/A",
+    status: inq.status || "Pending",
+    items: inq.items || [], // 🔥 keep items intact
+  };
+}
 
 // inside InquiryCard:
 const InquiryCard = ({
@@ -184,6 +163,14 @@ const PUBLIC_VAPID_KEY =
   "BMCht6yT0qJktTK-G1eFC56nKbrohESdcx3lpXtvsbU4qDABvciqIbFXG4F40r4fP6ilU94Q3L6qADyQH1Cdmj4";
 
 export default function InquiryListPage() {
+  const { state } = useLocation();
+  const { logout } = useAuth();
+  const inquiryRaw =
+    state?.inquiry || JSON.parse(localStorage.getItem("selectedInquiry"));
+
+  const inquiries = inquiryRaw;
+  console.log({ inquiries });
+
   const { user } = useAuth();
   console.log({ user });
   const [isSubscribed, setIsSubscribed] = useState(false);
@@ -376,6 +363,20 @@ export default function InquiryListPage() {
                 rounded="full"
               />
             </Tooltip>
+            <Tooltip label="Logout">
+              <IconButton
+                aria-label="Logout"
+                icon={<LogOut />}
+                onClick={() => {
+                  logout();
+                  navigate("/");
+                }}
+                variant="ghost"
+                size="xs"
+                rounded="full"
+                colorScheme="red"
+              />
+            </Tooltip>
           </HStack>
         </HStack>
 
@@ -386,11 +387,11 @@ export default function InquiryListPage() {
             onChange={handleSearch}
             bg={cardBg}
             borderColor={borderColor}
-            maxW="300px"
+            maxW="max-content"
             _focus={{ borderColor: "#1E3C7B" }}
           />
           <Select
-            w="200px"
+            w="max-content"
             value={filter}
             onChange={(e) => {
               setFilter(e.target.value);
@@ -441,69 +442,77 @@ export default function InquiryListPage() {
           viewMode === "grid" ? (
             // --- Grid View ---
             <SimpleGrid columns={{ base: 1, md: 2 }} spacing={6}>
-              {paginatedInquiries.map((inq, index) => (
-                <InquiryCard
-                  key={inq.id}
-                  inquiry={inq}
-                  index={index}
-                  cardBg={cardBg}
-                  borderColor={borderColor}
-                  subText={subText}
-                  textColor={textColor}
-                  onClick={(inquiry) =>
-                    navigate("/InquiryDetailPage", { state: { inquiry } })
-                  }
-                />
-              ))}
+              {paginatedInquiries.map((inq, index) => {
+                const inquiry = normalizeInquiry(inq, index);
+
+                return (
+                  <InquiryCard
+                    key={inquiry.id}
+                    inquiry={inquiry}
+                    index={index}
+                    cardBg={cardBg}
+                    borderColor={borderColor}
+                    subText={subText}
+                    textColor={textColor}
+                    onClick={() =>
+                      navigate("/InquiryDetailPage", { state: { inquiry } })
+                    }
+                  />
+                );
+              })}
             </SimpleGrid>
           ) : (
             // --- List View ---
             <VStack spacing={2} align="stretch">
-              {paginatedInquiries.map((inq, index) => (
-                <Flex
-                  key={inq.id}
-                  p={4}
-                  rounded="md"
-                  shadow="sm"
-                  bg={cardBg}
-                  border="1px solid"
-                  borderColor={borderColor}
-                  justify="space-between"
-                  align="center"
-                  _hover={{ shadow: "md", cursor: "pointer" }}
-                  onClick={() =>
-                    navigate("/InquiryDetailPage", { state: { inquiry: inq } })
-                  }
-                >
-                  <HStack spacing={4}>
-                    <Icon
-                      as={StarIcon}
-                      boxSize={4}
-                      color={index % 2 === 0 ? "#1E3C7B" : "#7B1E1E"}
-                    />
-                    <Box>
-                      <Text fontWeight="bold" color={textColor}>
-                        {inq.id} ({inq.qty})
-                      </Text>
-                      <Text fontSize="sm" color={subText} noOfLines={1}>
-                        {inq.customer}
-                      </Text>
-                    </Box>
-                  </HStack>
+              {paginatedInquiries.map((inq, index) => {
+                const inquiry = normalizeInquiry(inq, index);
 
-                  <Badge
-                    colorScheme={
-                      inq.status === "High Priority"
-                        ? "red"
-                        : inq.status === "Pending"
-                        ? "orange"
-                        : "green"
+                return (
+                  <Flex
+                    key={inquiry.id}
+                    p={4}
+                    rounded="md"
+                    shadow="sm"
+                    bg={cardBg}
+                    border="1px solid"
+                    borderColor={borderColor}
+                    justify="space-between"
+                    align="center"
+                    _hover={{ shadow: "md", cursor: "pointer" }}
+                    onClick={() =>
+                      navigate("/InquiryDetailPage", { state: { inquiry } })
                     }
                   >
-                    {inq.status}
-                  </Badge>
-                </Flex>
-              ))}
+                    <HStack spacing={4}>
+                      <Icon
+                        as={StarIcon}
+                        boxSize={4}
+                        color={index % 2 === 0 ? "#1E3C7B" : "#7B1E1E"}
+                      />
+                      <Box>
+                        <Text fontWeight="bold" color={textColor}>
+                          {inquiry.id} ({inquiry.qty})
+                        </Text>
+                        <Text fontSize="sm" color={subText} noOfLines={1}>
+                          {inquiry.customer}
+                        </Text>
+                      </Box>
+                    </HStack>
+
+                    <Badge
+                      colorScheme={
+                        inquiry.status === "High Priority"
+                          ? "red"
+                          : inquiry.status === "Pending"
+                          ? "orange"
+                          : "green"
+                      }
+                    >
+                      {inquiry.status}
+                    </Badge>
+                  </Flex>
+                );
+              })}
             </VStack>
           )
         ) : (

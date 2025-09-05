@@ -32,7 +32,32 @@ import ConfirmDialog from "../components/Shared/ConfirmDialog";
 export default function InquiryDetailPage() {
   const { state } = useLocation();
   const navigate = useNavigate();
-  const inquiry = state?.inquiry;
+  const inquiryRaw = state?.inquiry;
+  console.log({ inquiryRawlength: inquiryRaw });
+
+  // normalize inquiry
+  const inquiry = {
+    id: inquiryRaw?.id || "Unknown Inquiry",
+    qty: inquiryRaw?.qty ?? 0,
+    customer: inquiryRaw?.customer || "Unknown Customer",
+    sales: inquiryRaw?.sales || "N/A",
+    broker: inquiryRaw?.broker || "",
+    status: inquiryRaw?.status || "Pending",
+    items: inquiryRaw?.items?.length
+      ? inquiryRaw.items.map((item, idx) => ({
+          id: item.id ?? idx + 1,
+          name: item.name ?? `Item ${idx + 1}`,
+          qty: item.qty ?? 0,
+          rate: item.rate ?? 0,
+          grade: item.grade ?? "-",
+          winding: item.winding ?? "-",
+          pq: item.pq ?? "No",
+          clq: item.clq ?? "No",
+          lastRate: item.lastRate ?? 0,
+          status: item.status ?? "Pending", // add default if missing
+        }))
+      : [],
+  };
 
   // Theme
   const pageBg = useColorModeValue("gray.100", "gray.900");
@@ -82,6 +107,7 @@ export default function InquiryDetailPage() {
       </Flex>
     );
   }
+  console.log({ length: inquiry });
 
   return (
     <Flex minH="100vh" bg={pageBg} justify="center">

@@ -1,12 +1,13 @@
 // server/controllers/loginController.js
 const axios = require("axios");
 const { notifyAll } = require("../push/notifyHelper");
+const { BaseUrlBackend } = require("./baseUrls");
 
 exports.login = async (req, res) => {
   try {
     const { username, password } = req.body;
 
-    const url = `https://192.168.3.32:44300/zinq/getlogin?sap-client=120&Username=${username}&Password=${password}`;
+    const url = `${BaseUrlBackend}/zinq/getlogin?sap-client=120&Username=${username}&Password=${password}`;
 
     const config = {
       method: "get",
