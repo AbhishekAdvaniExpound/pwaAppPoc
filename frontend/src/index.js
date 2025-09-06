@@ -23,18 +23,18 @@ root.render(
             <App />
 
             {/* 🌐 Global Footer */}
-            <Box
+            {/* <Box
               as="footer"
               textAlign="center"
               py={1}
-              fontSize="sm"
+              fontSize="2px"
               color="gray.500"
               // borderTop="1px solid"
               // borderColor="gray.200"
               bg="transparent"
             >
               Developed by <strong>Expound Technivo</strong>
-            </Box>
+            </Box> */}
           </BrowserRouter>
         </ChakraProvider>
       </InquiryProvider>
