@@ -49,7 +49,7 @@ import {
 import { useDisclosure } from "@chakra-ui/react";
 import React from "react";
 import { API_BASE } from "../api/authApi";
-import { useInquiries } from "../context/InquiryContext";
+// import { useInquiries } from "../context/InquiryContext";
 
 // Mock Data
 // Mock Data
@@ -206,7 +206,7 @@ export default function InquiryListPage() {
         inq.id.toLowerCase().includes(search.toLowerCase());
       return matchesFilter && matchesSearch;
     });
-  }, [filter, search]);
+  }, [filter, search, inquiries]);
 
   const totalPages = Math.ceil(filteredInquiries.length / pageSize);
   const startIndex = (page - 1) * pageSize;

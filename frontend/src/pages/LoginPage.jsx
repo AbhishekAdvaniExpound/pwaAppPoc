@@ -57,12 +57,12 @@ export default function LoginPage() {
 
   // Geometric overlay colors (different in light/dark)
   const geoPrimary = useColorModeValue("#2563EB", "#60A5FA"); // blue tones
-  const geoSecondary = useColorModeValue("#9333EA", "#A78BFA"); // purple tones
+  // const geoSecondary = useColorModeValue("#9333EA", "#A78BFA"); // purple tones
   const geoAccent = useColorModeValue("#F59E0B", "#FBBF24"); // amber tones
   // Card background adapts appropriately for light/dark
   // light: white card with soft shadow; dark: translucent dark card so gradient shows
   const cardBg = useColorModeValue("white", "rgba(2,6,23,0.72)");
-  const cardShadow = useColorModeValue("lg", "dark-lg"); // Chakra's "dark-lg" may not exist; default to lg - shadow still ok
+  // const cardShadow = useColorModeValue("lg", "dark-lg"); // Chakra's "dark-lg" may not exist; default to lg - shadow still ok
   const logoBg = useColorModeValue("white", "white");
 
   // Text colors
