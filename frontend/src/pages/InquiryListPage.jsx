@@ -1,4 +1,4 @@
-// InquiryListPage.js
+// InquiryListPage.js (patched: fetch + cache fallback so list persists when returning)
 import {
   Box,
   Flex,
@@ -18,6 +18,14 @@ import {
   IconButton,
   Badge,
   Switch,
+  VStack,
+  Drawer,
+  DrawerOverlay,
+  DrawerContent,
+  DrawerHeader,
+  DrawerBody,
+  DrawerCloseButton,
+  useDisclosure,
 } from "@chakra-ui/react";
 import {
   StarIcon,
@@ -30,43 +38,73 @@ import {
   ArrowLeftIcon,
   ArrowRightIcon,
 } from "@chakra-ui/icons";
-import { LayoutGrid, List, LogOut } from "lucide-react"; // install lucide-react if not already
+import { LayoutGrid, List, LogOut } from "lucide-react";
+import { Bell, BellOff } from "react-feather";
 
-import { useState, useMemo, useCallback } from "react";
+import React, {
+  useState,
+  useMemo,
+  useCallback,
+  useRef,
+  useEffect,
+} from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { Bell, BellOff } from "react-feather"; // feather icons look better
-import { useEffect } from "react";
-import {
-  Drawer,
-  DrawerOverlay,
-  DrawerContent,
-  DrawerHeader,
-  DrawerBody,
-  DrawerCloseButton,
-  VStack,
-} from "@chakra-ui/react";
-import { useDisclosure } from "@chakra-ui/react";
-import React from "react";
 import { API_BASE } from "../api/authApi";
-// import { useInquiries } from "../context/InquiryContext";
+import axios from "axios";
 
-// Mock Data
-// Mock Data
+/* ---------------------------
+   Helper: normalize incoming shapes
+   --------------------------- */
+function normalizeInquiry(inq = {}, idx) {
+  const source = inq || {};
+  const id =
+    source["Inquiry No"] ||
+    source.inquiryNo ||
+    source.InquiryNo ||
+    source.id ||
+    `Inq-${idx + 1}`;
+  const customer =
+    source["Customer Name"] ||
+    source.customerName ||
+    source.customer ||
+    "Unknown Customer";
+  const broker =
+    source["Broker Name"] || source.brokerName || source.broker || "";
+  const sales =
+    source["Sales Person Name"] ||
+    source.salesPersonName ||
+    source.sales ||
+    "N/A";
+  const inquiryType = source["Inquiry Type"] || source.inquiryType || "";
+  const createdOn = source["Created On"] || source.createdOn || null;
 
-function normalizeInquiry(inq, idx) {
+  let status = "Pending";
+  if (typeof inquiryType === "string") {
+    const t = inquiryType.toLowerCase();
+    if (t.includes("urgent") || t.includes("high")) status = "High Priority";
+    else if (t.includes("normal") || t.includes("domestic")) status = "Normal";
+    else status = inquiryType || "Pending";
+  }
+
   return {
-    id: inq.id || `Inq-${idx + 1}`,
-    qty: inq.qty || 0,
-    customer: inq.customer || "Unknown Customer",
-    broker: inq.broker || "",
-    sales: inq.sales || "N/A",
-    status: inq.status || "Pending",
-    items: inq.items || [], // 🔥 keep items intact
+    original: source,
+    id,
+    qty: source.qty || source.Quantity || 0,
+    customer,
+    shortCustomer:
+      customer.length > 40 ? customer.slice(0, 38) + "…" : customer,
+    broker,
+    sales,
+    status,
+    createdOn,
+    items: Array.isArray(source.items) ? source.items : [],
   };
 }
 
-// inside InquiryCard:
+/* ---------------------------
+   InquiryCard (UI)
+   --------------------------- */
 const InquiryCard = ({
   inquiry,
   index,
@@ -104,6 +142,11 @@ const InquiryCard = ({
         transition: "0.2s",
       }}
       onClick={() => onClick(inquiry)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") onClick(inquiry);
+      }}
+      role="button"
+      tabIndex={0}
     >
       <HStack
         spacing={2}
@@ -112,13 +155,13 @@ const InquiryCard = ({
         rounded="full"
         align="center"
         justify="center"
-        // bg={`${statusColor}.100`}
       >
         <Icon as={StatusIcon} color={`${statusColor}.500`} />
         <Text fontSize="sm" fontWeight="semibold" color={`${statusColor}.600`}>
           {inquiry.status}
         </Text>
       </HStack>
+
       <HStack justify="space-between" mb={2}>
         <HStack spacing={3}>
           <Icon
@@ -153,6 +196,9 @@ const InquiryCard = ({
   );
 };
 
+/* ---------------------------
+   Utility: decode VAPID helper (kept from your file)
+   --------------------------- */
 function urlBase64ToUint8Array(base64String) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
@@ -162,48 +208,169 @@ function urlBase64ToUint8Array(base64String) {
 const PUBLIC_VAPID_KEY =
   "BMCht6yT0qJktTK-G1eFC56nKbrohESdcx3lpXtvsbU4qDABvciqIbFXG4F40r4fP6ilU94Q3L6qADyQH1Cdmj4";
 
-export default function InquiryListPage() {
+/* ---------------------------
+   Main component - patched version
+   --------------------------- */
+export default function InquiryListPage({ inquiryparams }) {
+  console.log({ inquiryparams });
+
   const { state } = useLocation();
   const { logout } = useAuth();
-  const inquiryRaw =
-    state?.inquiry || JSON.parse(localStorage.getItem("selectedInquiry"));
+  const navigate = useNavigate();
 
-  const inquiries = inquiryRaw;
-  console.log({ inquiries });
+  // -------------------------
+  // New: local cached/fetched list state + keys
+  // -------------------------
+  const [inquiriesData, setInquiriesData] = useState(null); // array or null
+  const LIST_LS_KEY = "inquiriesList_v1";
 
+  // try to load list from location.state first (if someone passed the entire list),
+  // otherwise fallback to cached/fetched list
+  // NOTE: we still preserve the single selectedInquiry localStorage fallback for detail navigation
+  const incomingState = state?.inquiry ?? null;
+
+  // Helper: fetch list from backend and persist to localStorage
+  const fetchListFromApi = useCallback(async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/api/inquiryRoutes/getInquiries`);
+      // handle variations in API shape
+      const list = res?.data?.data ?? res?.data ?? [];
+      if (Array.isArray(list)) {
+        setInquiriesData(list);
+        try {
+          localStorage.setItem(LIST_LS_KEY, JSON.stringify(list));
+        } catch (e) {
+          console.warn("Could not persist inquiries to localStorage", e);
+        }
+      } else {
+        // sometimes API returns object with nested array
+        console.warn("Unexpected list shape from API, expected array:", list);
+        setInquiriesData([]);
+      }
+      return list;
+    } catch (err) {
+      console.error("Failed to fetch inquiries from API", err);
+      return null;
+    }
+  }, []);
+
+  // On mount: load from location.state -> localStorage -> API
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      // If navigation passed an entire list array, use and persist it
+      if (Array.isArray(incomingState) && incomingState.length > 0) {
+        setInquiriesData(incomingState);
+        try {
+          localStorage.setItem(LIST_LS_KEY, JSON.stringify(incomingState));
+        } catch (e) {}
+        return;
+      }
+
+      // try load from localStorage
+      try {
+        const saved = JSON.parse(localStorage.getItem(LIST_LS_KEY) || "null");
+        if (mounted && Array.isArray(saved) && saved.length > 0) {
+          setInquiriesData(saved);
+          return;
+        }
+      } catch (e) {
+        // ignore parse errors and fetch fresh
+      }
+
+      // last: fetch from API
+      await fetchListFromApi();
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [incomingState, fetchListFromApi]);
+
+  /* -------------------------
+     original inquiry selection fallback:
+     - If location.state contains a single inquiry object we keep it in localStorage
+  ------------------------- */
+  useEffect(() => {
+    if (incomingState && !Array.isArray(incomingState)) {
+      // store single selected inquiry for detail page fallback (optional)
+      try {
+        localStorage.setItem("selectedInquiry", JSON.stringify(incomingState));
+      } catch (e) {}
+    }
+  }, [incomingState]);
+
+  /* -------------------------
+     Derive the array used by the UI (inquiries)
+     Priority:
+       1) if location.state holds an array -> use it
+       2) else use inquiriesData (cached / fetched)
+       3) else fallback to empty array
+  ------------------------- */
+  const inquiries = useMemo(() => {
+    if (Array.isArray(incomingState)) return incomingState;
+    if (Array.isArray(inquiriesData)) return inquiriesData;
+    return [];
+  }, [incomingState, inquiriesData]);
+
+  /* -------------------------
+     Standard UI state (mostly unchanged)
+  ------------------------- */
   const { user } = useAuth();
-  console.log({ user });
   const [isSubscribed, setIsSubscribed] = useState(false);
-
   const { colorMode, toggleColorMode } = useColorMode();
   const [filter, setFilter] = useState("All");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  const navigate = useNavigate();
+
   const [viewMode, setViewMode] = useState(() => {
     return localStorage.getItem("viewMode") || "grid";
   });
   useEffect(() => {
     localStorage.setItem("viewMode", viewMode);
   }, [viewMode]);
-  const pageSize = 6;
 
-  // Debounced search handler
+  const pageSize = 6;
+  const searchTimerRef = useRef(null);
   const handleSearch = useCallback((e) => {
     const value = e.target.value;
-    setTimeout(() => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
       setSearch(value);
       setPage(1);
-    }, 500);
+    }, 400);
+  }, []);
+  useEffect(() => {
+    return () => {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    };
   }, []);
 
-  // Filter + Pagination (memoized)
+  const handleSelectInquiry = useCallback(
+    (inquiry) => {
+      // navigate to detail route including id in path + full object in state
+      navigate(`/InquiryDetailPage/${encodeURIComponent(inquiry.id)}`, {
+        state: { inquiry },
+      });
+      // persist selected (optional)
+      try {
+        localStorage.setItem("selectedInquiry", JSON.stringify(inquiry));
+      } catch (e) {}
+    },
+    [navigate]
+  );
+
+  /* -------------------------
+     Filtering + pagination + UI helpers (unchanged)
+  ------------------------- */
   const filteredInquiries = useMemo(() => {
-    return inquiries.filter((inq) => {
+    return inquiries?.filter((inq) => {
       const matchesFilter = filter === "All" ? true : inq.status === filter;
       const matchesSearch =
-        inq.customer.toLowerCase().includes(search.toLowerCase()) ||
-        inq.id.toLowerCase().includes(search.toLowerCase());
+        (inq.customer || "")
+          .toLowerCase()
+          .includes((search || "").toLowerCase()) ||
+        (inq.id || "").toLowerCase().includes((search || "").toLowerCase());
       return matchesFilter && matchesSearch;
     });
   }, [filter, search, inquiries]);
@@ -230,24 +397,20 @@ export default function InquiryListPage() {
       const reg =
         (await navigator.serviceWorker.getRegistration()) ||
         (await navigator.serviceWorker.register("/sw.js"));
-
       const existing = await reg.pushManager.getSubscription();
       if (existing) {
         setIsSubscribed(true);
         return;
       }
-
       const sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY),
       });
-
       await fetch(`${API_BASE}/api/push/subscribe`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(sub),
       });
-
       setIsSubscribed(true);
     } catch (err) {
       console.error("Subscribe failed", err);
@@ -265,7 +428,9 @@ export default function InquiryListPage() {
     }
   };
 
-  // 🌗 Dynamic colors
+  /* -------------------------
+     UI Colors + Drawer state
+  ------------------------- */
   const pageBg = useColorModeValue("gray.100", "gray.900");
   const cardBg = useColorModeValue("white", "gray.800");
   const borderColor = useColorModeValue("gray.200", "gray.600");
@@ -275,7 +440,6 @@ export default function InquiryListPage() {
   const { isOpen, onOpen, onClose } = useDisclosure();
   const [history, setHistory] = useState([]);
 
-  // Fake history demo, you’d append real pushes here
   useEffect(() => {
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.addEventListener("message", (event) => {
@@ -287,9 +451,11 @@ export default function InquiryListPage() {
     }
   }, []);
 
+  /* -------------------------
+     Render
+  ------------------------- */
   return (
     <Flex minH="100vh" bg={pageBg} direction="column">
-      {/* Sticky Header */}
       <Box
         position="sticky"
         top="0"
@@ -307,13 +473,12 @@ export default function InquiryListPage() {
             fontWeight="bold"
             color={textHeadingColor}
           >
-            Welcome {user},
+            Welcome {user}
             <br />
             <p fontWeight="Normal"> Here are your Pending Inquiries</p>
           </Heading>
 
           <HStack spacing={2}>
-            {/* 🔔 Notification Bell with Badge */}
             <Box position="relative">
               <Tooltip
                 label={
@@ -325,14 +490,13 @@ export default function InquiryListPage() {
                 <IconButton
                   aria-label="Push Notifications"
                   icon={<Icon as={Bell} />}
-                  onClick={onOpen} // open drawer
+                  onClick={onOpen}
                   variant="ghost"
                   size="lg"
                   rounded="full"
                 />
               </Tooltip>
 
-              {/* Badge overlay */}
               {history.length > 0 && (
                 <Badge
                   colorScheme="red"
@@ -348,7 +512,6 @@ export default function InquiryListPage() {
               )}
             </Box>
 
-            {/* 🌙 / ☀️ Theme Toggle */}
             <Tooltip
               label={`Switch to ${
                 colorMode === "light" ? "dark" : "light"
@@ -380,7 +543,6 @@ export default function InquiryListPage() {
           </HStack>
         </HStack>
 
-        {/* Filters */}
         <HStack mt={4} spacing={4}>
           <Input
             placeholder="Search by ID or Customer"
@@ -411,7 +573,6 @@ export default function InquiryListPage() {
         </HStack>
       </Box>
 
-      {/* Inquiry Grid */}
       <Box flex="1" p={8}>
         <HStack justify="flex-end" px={8} mb={4}>
           <ButtonGroup size="sm" isAttached rounded="full" variant="outline">
@@ -425,7 +586,6 @@ export default function InquiryListPage() {
                 rounded="full"
               />
             </Tooltip>
-
             <Tooltip label="List View">
               <IconButton
                 aria-label="List View"
@@ -438,13 +598,12 @@ export default function InquiryListPage() {
             </Tooltip>
           </ButtonGroup>
         </HStack>
+
         {paginatedInquiries.length > 0 ? (
           viewMode === "grid" ? (
-            // --- Grid View ---
             <SimpleGrid columns={{ base: 1, md: 2 }} spacing={6}>
               {paginatedInquiries.map((inq, index) => {
                 const inquiry = normalizeInquiry(inq, index);
-
                 return (
                   <InquiryCard
                     key={inquiry.id}
@@ -454,19 +613,15 @@ export default function InquiryListPage() {
                     borderColor={borderColor}
                     subText={subText}
                     textColor={textColor}
-                    onClick={() =>
-                      navigate("/InquiryDetailPage", { state: { inquiry } })
-                    }
+                    onClick={handleSelectInquiry}
                   />
                 );
               })}
             </SimpleGrid>
           ) : (
-            // --- List View ---
             <VStack spacing={2} align="stretch">
               {paginatedInquiries.map((inq, index) => {
                 const inquiry = normalizeInquiry(inq, index);
-
                 return (
                   <Flex
                     key={inquiry.id}
@@ -479,9 +634,12 @@ export default function InquiryListPage() {
                     justify="space-between"
                     align="center"
                     _hover={{ shadow: "md", cursor: "pointer" }}
-                    onClick={() =>
-                      navigate("/InquiryDetailPage", { state: { inquiry } })
-                    }
+                    onClick={() => handleSelectInquiry(inquiry)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleSelectInquiry(inquiry);
+                    }}
+                    role="button"
+                    tabIndex={0}
                   >
                     <HStack spacing={4}>
                       <Icon
@@ -533,27 +691,15 @@ export default function InquiryListPage() {
         )}
       </Box>
 
-      {/* Pagination */}
       {totalPages > 1 && (
         <HStack justify="space-between" px={8} py={4}>
-          {/* Left: Info */}
           <Text fontSize="sm" color={subText}>
             Showing {startIndex + 1} –{" "}
             {Math.min(startIndex + pageSize, filteredInquiries.length)} of{" "}
             {filteredInquiries.length}
           </Text>
 
-          {/* Right: Pagination Controls */}
           <HStack spacing={1}>
-            {/* <IconButton
-              size="sm"
-              variant="ghost"
-              aria-label="First Page"
-              icon={<ChevronLeftIcon />}
-              onClick={() => setPage(1)}
-              isDisabled={page === 1}
-            /> */}
-
             <IconButton
               size="sm"
               variant="ghost"
@@ -562,15 +708,12 @@ export default function InquiryListPage() {
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               isDisabled={page === 1}
             />
-
-            {/* Page Numbers */}
             {Array.from({ length: totalPages }, (_, i) => i + 1)
               .filter(
-                (p) => p === 1 || p === totalPages || Math.abs(p - page) <= 1 // show first, last, and around current
+                (p) => p === 1 || p === totalPages || Math.abs(p - page) <= 1
               )
               .map((p, idx, arr) => (
                 <React.Fragment key={p}>
-                  {/* Ellipsis before skipped pages */}
                   {idx > 0 && arr[idx - 1] !== p - 1 && (
                     <Text px={2} color={subText}>
                       …
@@ -586,7 +729,6 @@ export default function InquiryListPage() {
                   </Button>
                 </React.Fragment>
               ))}
-
             <IconButton
               size="sm"
               variant="ghost"
@@ -595,15 +737,6 @@ export default function InquiryListPage() {
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               isDisabled={page === totalPages}
             />
-
-            {/* <IconButton
-              size="sm"
-              variant="ghost"
-              aria-label="Last Page"
-              icon={<ChevronRightIcon />}
-              onClick={() => setPage(totalPages)}
-              isDisabled={page === totalPages}
-            /> */}
           </HStack>
         </HStack>
       )}
@@ -612,17 +745,14 @@ export default function InquiryListPage() {
       <Text fontSize="xs" textAlign="center" color={subText} pb={4}>
         Inquiry list powered by DNH API
       </Text>
+
       <Drawer isOpen={isOpen} placement="right" onClose={onClose} size="sm">
         <DrawerOverlay />
         <DrawerContent bg={pageBg}>
           <DrawerCloseButton />
-
-          {/* 🔔 Header with count */}
           <DrawerHeader borderBottomWidth="1px" borderColor={borderColor}>
             <HStack justify="space-between" w="100%">
-              {/* Left side: Icon + Label */}
               <HStack spacing={2}>
-                {/* 🔔 Notification Bell with Badge */}
                 <Box position="relative">
                   <Tooltip
                     label={
@@ -634,14 +764,12 @@ export default function InquiryListPage() {
                     <IconButton
                       aria-label="Push Notifications"
                       icon={<Icon as={Bell} />}
-                      onClick={onOpen} // open drawer
+                      onClick={onOpen}
                       variant="ghost"
                       size="lg"
                       rounded="full"
                     />
                   </Tooltip>
-
-                  {/* Badge overlay */}
                   {history.length > 0 && (
                     <Badge
                       colorScheme="red"
@@ -660,13 +788,10 @@ export default function InquiryListPage() {
                   Notifications
                 </Text>
               </HStack>
-
-              {/* Right side: Count + Clear */}
             </HStack>
           </DrawerHeader>
 
           <DrawerBody px={4} py={5}>
-            {/* Subscribe / Unsubscribe */}
             <HStack mb={5} justify="space-between" align="center">
               <HStack spacing={2}>
                 <Icon as={Bell} color="blue.500" boxSize={4} />
@@ -697,7 +822,7 @@ export default function InquiryListPage() {
                 Clear
               </Button>
             )}
-            {/* Notifications list */}
+
             {history.length === 0 ? (
               <Flex
                 align="center"
