@@ -67,7 +67,6 @@ export const InquiryProvider = ({ children }) => {
 
   // Fetch a single inquiry by id (separate convenience wrapper)
   const fetchInquiryById = useCallback(async (id) => {
-    console.log({ fetchInquiryById: id });
     if (!id) return null;
     setLoading(true);
     setError(null);

@@ -53,7 +53,7 @@ const inquiries = [
 
 export default function InquiryDetailPage() {
   return (
-    <Flex minH="100vh" bg="gray.50" align="center" justify="center" p={6}>
+    <Flex minH="100vh" bg="gray.50" align="center" justify="center" p={0}>
       <Box bg="white" rounded="2xl" shadow="xl" p={6} w="100%" maxW="500px">
         {/* Title */}
         <Heading

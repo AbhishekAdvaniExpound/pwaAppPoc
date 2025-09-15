@@ -90,7 +90,7 @@ function normalizeInquiry(inq = {}, idx) {
   return {
     original: source,
     id,
-    qty: source.qty || source.Quantity || 0,
+    qty: source.QUANTITY || source.Quantity || 0,
     customer,
     shortCustomer:
       customer.length > 40 ? customer.slice(0, 38) + "…" : customer,
@@ -212,8 +212,6 @@ const PUBLIC_VAPID_KEY =
    Main component - patched version
    --------------------------- */
 export default function InquiryListPage({ inquiryparams }) {
-  console.log({ inquiryparams });
-
   const { state } = useLocation();
   const { logout } = useAuth();
   const navigate = useNavigate();

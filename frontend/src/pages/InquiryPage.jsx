@@ -31,17 +31,11 @@ import { useEffect, useRef, useState } from "react";
 import ConfirmDialog from "../components/Shared/ConfirmDialog";
 import { useInquiries } from "../context/InquiryContext";
 
-export default function InquiryDetailPage({ inquiryparams = null }) {
+export default function InquiryDetailPage({ inquiryparams }) {
   const { state } = useLocation();
   const { id: paramId } = useParams(); // if your route is /inquiries/:id
   const navigate = useNavigate();
   const toast = useToast();
-
-  console.log("InquiryDetailPage init", {
-    inquiryparams,
-    locationState: state,
-    paramId,
-  });
 
   // Sources (priority order)
   const propInquiry = inquiryparams ?? null;
@@ -75,73 +69,88 @@ export default function InquiryDetailPage({ inquiryparams = null }) {
     return String(maybe);
   };
 
-  // Safe fetch wrapper: handles responses that return either {data:...} or the object directly
-  const safeFetchById = async (id) => {
-    if (!id) throw new Error("safeFetchById: no id provided");
-    if (typeof fetchInquiryById !== "function")
-      throw new Error("safeFetchById: fetchInquiryById is not a function");
-
-    const raw = await fetchInquiryById(id);
-    // try to be permissive: handle axios-like responses and plain objects
-    if (!raw) return null;
-    if (raw.data) return raw.data;
-    return raw;
-  };
   /* ---------- useEffect: simple context-backed loader ---------- */
+  // paste this in place of your existing useEffect
   useEffect(() => {
     let mounted = true;
 
     const load = async () => {
       // 1) prefer direct prop
       if (propInquiry) {
-        if (mounted) {
-          setInquirySource(propInquiry);
-        }
+        if (mounted) setInquirySource(propInquiry);
         return;
       }
 
-      // 2) prefer full object in location.state
-      if (stateInquiry && stateInquiry.items) {
-        if (mounted) {
-          setInquirySource(stateInquiry);
-        }
-        return;
-      }
-
-      // 3) prefer currentInquiry already in context
-      if (currentInquiry) {
-        // if param/id present but different from currentInquiry, we'll consider refetch below
-        if (mounted) setInquirySource(currentInquiry);
-      }
-
-      // 4) if we still don't have a source, but have an id in state or url, fetch it
-      const idToFetch = idFromState || idFromUrl;
+      // 2) prefer full object in location.state (but only if it has items)
       if (
-        !inquirySource &&
-        idToFetch &&
-        typeof fetchInquiryById === "function"
+        stateInquiry &&
+        Array.isArray(stateInquiry.items) &&
+        stateInquiry.items.length
       ) {
-        try {
-          setLocalLoading(true);
-          const fetched = await fetchInquiryById(idToFetch); // context wrapper will set currentInquiry
-          if (!mounted) return;
-          setInquirySource(fetched || null);
-        } catch (err) {
-          console.error("fetchInquiryById error:", err);
-          if (mounted) setInquirySource(null);
-        } finally {
-          if (mounted) setLocalLoading(false);
-        }
+        if (mounted) setInquirySource(stateInquiry);
+        return;
+      }
+
+      // 3) use currentInquiry from context if available
+      if (currentInquiry) {
+        if (mounted) setInquirySource(currentInquiry);
+        // still may want to refetch if URL id differs; we continue below
+      }
+
+      // 4) resolve id and fetch if needed
+      const rawId = idFromState ?? idFromUrl;
+      const idToFetch = resolveId(rawId);
+
+      if (!idToFetch) {
+        console.log("No id to fetch; aborting fetch step");
+        return;
+      }
+
+      // avoid fetching same id again
+      if (loadedIdRef.current === idToFetch) {
+        console.log("Already loaded id", idToFetch);
+        return;
+      }
+
+      if (typeof fetchInquiryById !== "function") {
+        console.error("fetchInquiryById is not a function!", fetchInquiryById);
+        return;
+      }
+
+      try {
+        setLocalLoading(true);
+
+        const raw = await fetchInquiryById(idToFetch);
+
+        // permissive unwrapping
+        const normalizedResponse = raw?.data ?? raw;
+        if (!mounted) return;
+
+        loadedIdRef.current = idToFetch;
+        setInquirySource(normalizedResponse || null);
+      } catch (err) {
+        console.error("fetchInquiryById error:", err);
+        if (mounted) setInquirySource(null);
+      } finally {
+        if (mounted) setLocalLoading(false);
       }
     };
 
     load();
-
     return () => {
       mounted = false;
     };
-    // keep deps limited and stable
-  }, [inquiryparams, state, paramId, fetchInquiryById, currentInquiry]);
+  }, [
+    inquiryparams,
+    state,
+    paramId,
+    fetchInquiryById,
+    currentInquiry,
+    idFromState,
+    idFromUrl,
+    propInquiry,
+    stateInquiry,
+  ]);
 
   /* ---------- handleConfirm: simple refetch using context wrapper ---------- */
   const handleConfirm = async () => {
@@ -185,42 +194,105 @@ export default function InquiryDetailPage({ inquiryparams = null }) {
   const normalizeInquiry = (raw) => {
     if (!raw) return null;
 
-    // helper to get items array safely
-    const itemsArr = Array.isArray(raw.items)
-      ? raw.items
-      : Array.isArray(raw.lines)
-      ? raw.lines
-      : [];
+    // Items might be under INQ_ITEM or items or lines; prefer INQ_ITEM as per sample
+    const itemsArr =
+      Array.isArray(raw.INQ_ITEM) && raw.INQ_ITEM.length
+        ? raw.INQ_ITEM
+        : Array.isArray(raw.items)
+        ? raw.items
+        : Array.isArray(raw.lines)
+        ? raw.lines
+        : [];
+
+    const id =
+      raw?.["Inquiry No"] ??
+      raw?.id ??
+      raw?.inquiryId ??
+      raw?.reference ??
+      "Unknown";
+
+    const customer =
+      raw?.["Customer Name"] ??
+      raw?.customer ??
+      raw?.buyer ??
+      "Unknown Customer";
+
+    const sales =
+      raw?.["Sales Person Name"] ??
+      raw?.["Broker Name"] ??
+      raw?.salesPerson ??
+      raw?.sales ??
+      "N/A";
+
+    const qty =
+      raw?.qty ??
+      raw?.totalQty ??
+      raw?.["Qty"] ??
+      (itemsArr.length
+        ? itemsArr.reduce(
+            (s, it) => s + Number(it?.QUANTITY ?? it?.qty ?? 0),
+            0
+          )
+        : 0);
+
+    const normalizedItems = (itemsArr || []).map((it, i) => {
+      const src = it || {};
+
+      return {
+        // keep original line id if any, else generate
+        id:
+          src?.id ??
+          src?.lineId ??
+          (typeof src?.INQ_ITEM !== "undefined"
+            ? String(src.INQ_ITEM)
+            : null) ??
+          `line-${i + 1}`,
+
+        // name comes from MATERIAL
+        name:
+          src?.MATERIAL ??
+          src?.material ??
+          src?.itemName ??
+          src?.description ??
+          `Item ${i + 1}`,
+
+        // quantity
+        qty: src?.QUANTITY ?? src?.quantity ?? src?.qty ?? src?.Quantity ?? 0,
+
+        // rate: prefer BASE_PRICE, fall back to NEO_RATE
+        rate:
+          src?.BASE_PRICE ??
+          src?.basePrice ??
+          src?.NEO_RATE ??
+          src?.neoRate ??
+          src?.price ??
+          0,
+
+        // last negotiated / last known rate
+        lastRate: src?.NEO_RATE ?? src?.lastRate ?? 0,
+
+        // grade, winding, pq, clq
+        grade: src?.GRADE ?? src?.grade ?? "-",
+        winding: src?.WINDING ?? src?.winding ?? "-",
+        pq: src?.PQ ?? src?.pq ?? "No",
+        clq: src?.CLQ ?? src?.clq ?? "No",
+
+        // unit and currency if present
+        unit: src?.UNIT ?? src?.unit ?? null,
+        currency: src?.WAERS ?? src?.currency ?? null,
+
+        // preserve raw line
+        _raw: src,
+      };
+    });
 
     return {
-      id: raw.id || raw.inquiryId || raw["Inquiry No"] || "Unknown",
-      qty: raw.qty ?? raw.totalQty ?? raw["Qty"] ?? 0,
-      customer:
-        raw.customer ||
-        raw.customerName ||
-        raw["Customer Name"] ||
-        "Unknown Customer",
-      sales: raw.sales || raw.salesPerson || raw["sales"] || "N/A",
-      items: itemsArr.map((it, i) => {
-        const src = it.original || it; // unwrap if nested
-        return {
-          id: src.id ?? src.lineId ?? src["LineId"] ?? `line-${i + 1}`,
-          name:
-            src.name ??
-            src.itemName ??
-            src["Customer Name"] ??
-            src["ItemName"] ??
-            `Item ${i + 1}`,
-          qty: src.qty ?? src.quantity ?? src["Qty"] ?? 0,
-          rate: src.rate ?? src.price ?? src["Rate"] ?? 0,
-          grade: src.grade ?? src["Grade"] ?? "-",
-          winding: src.winding ?? src["Winding"] ?? "-",
-          pq: src.pq ?? src["PQ"] ?? "No",
-          clq: src.clq ?? src["CLQ"] ?? "No",
-          lastRate: src.lastRate ?? src["Last Rate"] ?? 0,
-          status: src.status ?? src["Status"] ?? "Pending",
-        };
-      }),
+      id,
+      qty,
+      customer,
+      sales,
+      items: normalizedItems,
+      _raw: raw, // keep raw payload for inspection
     };
   };
 
@@ -268,9 +340,9 @@ export default function InquiryDetailPage({ inquiryparams = null }) {
   }
 
   return (
-    <Flex minH="100vh" bg={pageBg} justify="center" p={4}>
+    <Flex minH="100vh" bg={pageBg} justify="center" p={0}>
       {/* paste your existing UI here (header, items list, ConfirmDialog etc.) */}
-      <Box w="100%" maxW="1200px" bg={cardBg} rounded="2xl" shadow="xl" p={6}>
+      <Box w="100%" maxW="100%" bg={cardBg} rounded="2xl" shadow="xl" p={6}>
         <Breadcrumb fontSize="sm" mb={4} color={textColor}>
           <BreadcrumbItem>
             <BreadcrumbLink onClick={() => navigate("/inquiries")}>

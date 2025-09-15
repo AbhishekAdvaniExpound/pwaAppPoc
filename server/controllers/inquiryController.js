@@ -53,7 +53,6 @@ exports.getInquiries = async (req, res) => {
     );
 
     const inquiries = response.data;
-    console.log({ inquiries });
 
     res.status(200).json({
       success: true,
@@ -134,16 +133,6 @@ exports.getInquiryDetail = async (req, res) => {
     if (ignoreSSL) {
       axiosOptions.httpsAgent = new https.Agent({ rejectUnauthorized: false });
     }
-
-    console.log({
-      url,
-      axiosOptions: {
-        headers: Object.keys(headers),
-        timeout: axiosOptions.timeout,
-        hasAuth: !!axiosOptions.auth,
-        ignoreSSL,
-      },
-    });
 
     const resp = await axios.get(url, axiosOptions);
 
