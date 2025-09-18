@@ -89,7 +89,7 @@ export const InquiryProvider = ({ children }) => {
   // Fetch list (optionally accept filters)
   const fetchInquiries = useCallback(
     async (opts = {}) => {
-      const key = cacheKeyFor(opts);
+      // const key = cacheKeyFor(opts);
       setLoading(true);
       setError(null);
 

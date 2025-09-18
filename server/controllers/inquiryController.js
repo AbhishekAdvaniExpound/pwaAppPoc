@@ -83,9 +83,7 @@ exports.getInquiryDetail = async (req, res) => {
     }
 
     const sapClient = req.query.sapClient || process.env.SAP_CLIENT || "120";
-    const sapHost = (
-      process.env.SAP_BASE_URL || "https://192.168.3.32:44300"
-    ).replace(/\/+$/, "");
+    const sapHost = (process.env.SAP_BASE_URL || "").replace(/\/+$/, "");
     const path = `/zinq/getinqdetail`;
     const url = `${sapHost}${path}?sap-client=${encodeURIComponent(
       sapClient
@@ -170,5 +168,203 @@ exports.getInquiryDetail = async (req, res) => {
     return res
       .status(500)
       .json({ error: "Internal server error", details: err?.message });
+  }
+};
+
+/**
+ * GET /api/negotiation?inqno=0010015633&inqitem=000010
+ * or  GET /api/negotiation/:inqno/:inqitem
+ */
+exports.getNegotiation = async (req, res) => {
+  try {
+    // accept params from path or query
+    const inqno = (req.params.inqno || req.query.inqno || "").toString().trim();
+    const inqitem = (req.params.inqitem || req.query.inqitem || "")
+      .toString()
+      .trim();
+
+    if (!inqno) {
+      return res
+        .status(400)
+        .json({ error: "Missing inquiry number (inqno) param" });
+    }
+
+    // sap client and base host
+    const sapClient = (
+      req.query.sapClient ||
+      process.env.SAP_CLIENT ||
+      "120"
+    ).toString();
+    const sapHost = (process.env.SAP_BASE_URL || "").replace(/\/+$/, "");
+    const path = `/zinq/negotiation`;
+
+    // pad inqitem to 6 digits if numeric (POSNR style)
+    const padPosnr = (raw) => {
+      if (!raw) return "";
+      if (/^\d+$/.test(raw)) return raw.padStart(6, "0");
+      return raw;
+    };
+
+    const inqitemParam = padPosnr(inqitem);
+
+    // build URL and query string
+    const url = `${sapHost}${path}?sap-client=${encodeURIComponent(
+      sapClient
+    )}&inqno=${encodeURIComponent(inqno)}${
+      inqitemParam ? `&inqitem=${encodeURIComponent(inqitemParam)}` : ""
+    }`;
+
+    // build headers
+    const headers = {
+      Accept: "application/json",
+    };
+
+    // prefer explicit Basic auth header if provided (BASE64 username:password)
+    if (process.env.SAP_AUTH_BASIC) {
+      headers.Authorization = `Basic ${process.env.SAP_AUTH_BASIC}`;
+    }
+
+    // allow client to pass cookie if required
+    const cookie =
+      req.headers["sap-cookie"] ||
+      req.query.sapCookie ||
+      process.env.SAP_COOKIE;
+    if (cookie) headers.Cookie = cookie;
+
+    // axios options
+    const axiosOptions = {
+      headers,
+      timeout: Number(process.env.SAP_REQUEST_TIMEOUT_MS || 15000),
+      maxBodyLength: Infinity,
+    };
+
+    // fallback to auth object if basic token not present but username/password are configured
+    if (
+      !process.env.SAP_AUTH_BASIC &&
+      process.env.SAP_USERNAME &&
+      process.env.SAP_PASSWORD
+    ) {
+      axiosOptions.auth = {
+        username: process.env.SAP_USERNAME,
+        password: process.env.SAP_PASSWORD,
+      };
+    }
+
+    // optionally ignore self-signed certs (DEV ONLY)
+    const ignoreSSL =
+      String(process.env.SAP_IGNORE_SSL || "false").toLowerCase() === "true";
+    if (ignoreSSL) {
+      axiosOptions.httpsAgent = new https.Agent({ rejectUnauthorized: false });
+    }
+
+    // perform request
+    const resp = await axios.get(url, axiosOptions);
+
+    // handle success (2xx)
+    if (resp.status >= 200 && resp.status < 300) {
+      // Normalize response type: if string but content-type is json, try parse.
+      let data = resp.data;
+      const contentType = (resp.headers["content-type"] || "").toLowerCase();
+      if (
+        typeof data === "string" &&
+        contentType.includes("application/json")
+      ) {
+        try {
+          data = JSON.parse(data);
+        } catch (e) {
+          // leave as string
+        }
+      }
+
+      return res.json({
+        status: "ok",
+        source: url,
+        data,
+      });
+    }
+
+    // non 2xx
+    return res.status(resp.status).json({
+      status: "error",
+      source: url,
+      statusCode: resp.status,
+      message: resp.data || resp.statusText || "SAP returned non-OK status",
+    });
+  } catch (err) {
+    // log helpful diagnostics
+    console.error(
+      "getNegotiation error:",
+      err?.response?.status,
+      err?.message || err
+    );
+    const statusCode = err?.response?.status || 500;
+    const sapBody = err?.response?.data;
+
+    return res.status(statusCode).json({
+      error: "Failed to fetch negotiation from SAP",
+      details: err?.message,
+      sapStatus: statusCode,
+      sapBody,
+    });
+  }
+};
+
+// POST Negotiation controller
+exports.postNegotiation = async (req, res) => {
+  try {
+    const body = req.body;
+
+    if (!body || !body.VBELN || !body.POSNR) {
+      return res.status(400).json({
+        error: "Missing required fields (VBELN, POSNR, etc.)",
+      });
+    }
+
+    const sapClient = process.env.SAP_CLIENT || "120";
+    const sapHost = (process.env.SAP_BASE_URL || "").replace(/\/+$/, "");
+    const url = `${sapHost}/zinq/negotiation?sap-client=${sapClient}`;
+
+    // headers
+    const headers = {
+      "Content-Type": "application/json",
+    };
+
+    if (process.env.SAP_AUTH_BASIC) {
+      headers.Authorization = `Basic ${process.env.SAP_AUTH_BASIC}`;
+    } else {
+      // fallback (hardcoded for now, but recommend env variable!)
+      headers.Authorization = "Basic QWJhcDpFeHBvdW5kQDEyMzQ1Njc4OQ==";
+    }
+
+    if (process.env.SAP_COOKIE) {
+      headers.Cookie = process.env.SAP_COOKIE;
+    }
+
+    const axiosOptions = {
+      method: "post",
+      url,
+      headers,
+      data: body,
+      timeout: Number(process.env.SAP_REQUEST_TIMEOUT_MS || 15000),
+    };
+
+    // allow self-signed certs in DEV
+    if ((process.env.SAP_IGNORE_SSL || "false").toLowerCase() === "true") {
+      axiosOptions.httpsAgent = new https.Agent({ rejectUnauthorized: false });
+    }
+
+    const resp = await axios.request(axiosOptions);
+
+    return res.json({
+      status: "ok",
+      source: url,
+      data: resp.data,
+    });
+  } catch (err) {
+    console.error("postNegotiation error:", err.message || err);
+    return res.status(500).json({
+      error: "Failed to save negotiation",
+      details: err.message,
+    });
   }
 };
