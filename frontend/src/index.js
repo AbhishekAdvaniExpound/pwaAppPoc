@@ -13,10 +13,10 @@ import { InquiryProvider } from "./context/InquiryContext";
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(
   <React.StrictMode>
-    <AuthProvider>
-      <InquiryProvider>
-        <ChakraProvider theme={theme}>
-          <BrowserRouter>
+    <BrowserRouter>
+      <AuthProvider>
+        <InquiryProvider>
+          <ChakraProvider theme={theme}>
             <ColorModeScript initialColorMode={theme.config.initialColorMode} />
 
             {/* Main App */}
@@ -35,10 +35,10 @@ root.render(
             >
               Developed by <strong>Expound Technivo</strong>
             </Box> */}
-          </BrowserRouter>
-        </ChakraProvider>
-      </InquiryProvider>
-    </AuthProvider>
+          </ChakraProvider>
+        </InquiryProvider>
+      </AuthProvider>
+    </BrowserRouter>
   </React.StrictMode>
 );
 

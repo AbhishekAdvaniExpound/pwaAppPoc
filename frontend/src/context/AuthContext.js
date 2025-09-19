@@ -3,6 +3,7 @@ import React, { createContext, useContext, useState, useEffect } from "react";
 import axios from "axios";
 import { useToast } from "@chakra-ui/react";
 import { API_BASE } from "../api/authApi";
+import { useNavigate } from "react-router-dom";
 
 // Create Context
 const AuthContext = createContext();
@@ -15,6 +16,7 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const toast = useToast();
+  const navigate = useNavigate();
 
   // Login function
   const login = async (username, password) => {
@@ -27,8 +29,15 @@ export const AuthProvider = ({ children }) => {
       });
 
       if (response.data.success) {
-        setUser(response.data.data);
-        localStorage.setItem("user", JSON.stringify(response.data.data));
+        // Attach username explicitly
+        const userData = {
+          ...response.data.data,
+          username, // ✅ ensure username is saved
+        };
+
+        setUser(userData);
+        localStorage.setItem("user", JSON.stringify(userData));
+        localStorage.setItem("username", username);
 
         // ✅ Success toast
         toast({
@@ -39,6 +48,8 @@ export const AuthProvider = ({ children }) => {
           isClosable: true,
           position: "top-right",
         });
+
+        navigate("/inquiries");
       } else {
         setError("Invalid login response");
 

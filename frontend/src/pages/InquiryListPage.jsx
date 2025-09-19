@@ -158,7 +158,7 @@ const InquiryCard = ({
       >
         <Icon as={StatusIcon} color={`${statusColor}.500`} />
         <Text fontSize="sm" fontWeight="semibold" color={`${statusColor}.600`}>
-          {inquiry.status}
+          {inquiry.status ?? "N/A"}
         </Text>
       </HStack>
 
@@ -176,7 +176,8 @@ const InquiryCard = ({
               color={textColor}
               noOfLines={1}
             >
-              {inquiry.id} ({inquiry.qty}) – {inquiry.customer}
+              {inquiry.id ?? "N/A"} ({inquiry.qty ?? "N/A"}) –{" "}
+              {inquiry.customer ?? "N/A"}
             </Text>
           </Tooltip>
         </HStack>
@@ -185,12 +186,12 @@ const InquiryCard = ({
       {inquiry.broker && (
         <Tooltip label={inquiry.broker} hasArrow>
           <Text fontSize="sm" color={subText} pl={8} noOfLines={1}>
-            Broker: {inquiry.broker}
+            Broker: {inquiry.broker ?? "N/A"}
           </Text>
         </Tooltip>
       )}
       <Text fontSize="sm" color={subText} pl={8}>
-        Sales: {inquiry.sales}
+        Sales: {inquiry.sales ?? "N/A"}
       </Text>
     </Box>
   );
@@ -315,6 +316,7 @@ export default function InquiryListPage({ inquiryparams }) {
      Standard UI state (mostly unchanged)
   ------------------------- */
   const { user } = useAuth();
+  console.log({ user });
   const [isSubscribed, setIsSubscribed] = useState(false);
   const { colorMode, toggleColorMode } = useColorMode();
   const [filter, setFilter] = useState("All");
@@ -471,9 +473,18 @@ export default function InquiryListPage({ inquiryparams }) {
             fontWeight="bold"
             color={textHeadingColor}
           >
-            Welcome {user}
+            Welcome,{" "}
+            {user && typeof user === "object"
+              ? user.name ||
+                user.username ||
+                user.displayName ||
+                user.email ||
+                "User"
+              : user || "User"}
             <br />
-            <p fontWeight="Normal"> Here are your Pending Inquiries</p>
+            <Text as="span" fontWeight="normal" fontSize="sm">
+              Here are your Pending Inquiries
+            </Text>
           </Heading>
 
           <HStack spacing={2}>

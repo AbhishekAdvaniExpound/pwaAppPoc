@@ -28,8 +28,9 @@ const loginLimiter = rateLimit({
 });
 
 // Only apply limiter to login
-app.use("/api/login", loginLimiter, loginRoutes);
-
+app.use("/api", loginRoutes);
+// app.use("/api", loginLimiter, loginRoutes);
+//
 // No limiter here
 app.use("/api/push", pushRoutes);
 app.use("/api/inquiryRoutes", inquiryRoutes);

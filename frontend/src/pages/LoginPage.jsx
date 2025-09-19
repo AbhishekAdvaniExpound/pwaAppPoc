@@ -43,7 +43,7 @@ export default function LoginPage() {
     localStorage.setItem("selectedInquiry", JSON.stringify(inquiries));
     e.preventDefault();
     login(username, password);
-    navigate("/inquiries");
+    // navigate("/inquiries");
   };
 
   const { colorMode, toggleColorMode } = useColorMode();

@@ -33,6 +33,7 @@ import { useInquiries } from "../context/InquiryContext";
 
 export default function InquiryDetailPage({ inquiryparams }) {
   const { state } = useLocation();
+  console.log({ state });
   const { id: paramId } = useParams(); // if your route is /inquiries/:id
   const navigate = useNavigate();
   const toast = useToast();
