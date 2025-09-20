@@ -79,12 +79,72 @@ export const InquiryProvider = ({ children }) => {
     })();
 
     // store controller in the Promise so it can be cancelled if needed later
-    // (not strictly necessary here but helpful if you extend cancellation)
     promise.controller = controller;
 
     inFlightRef.current.set(cacheKey, promise);
     return promise;
   }, []);
+
+  // --- mock data fallback (used when server returns 500/404 or response is empty) ---
+  const inquiriesData = Array.from({ length: 42 }, (_, i) => ({
+    id: `Inq-${i + 1}`,
+    qty: 10 + i, // just to vary a bit
+    customer: `Customer Name with longer text that may overflow (${i + 1})`,
+    broker: i % 2 === 0 ? `Broker Name with longer text too (${i + 1})` : null,
+    sales: `Sales Person (${i + 1})`,
+    status: i % 3 === 0 ? "High Priority" : i % 3 === 1 ? "Pending" : "Normal",
+
+    items: [
+      {
+        id: 1,
+        name: `Item A${i + 1}`,
+        qty: 20 + i,
+        rate: 100 + i,
+        grade: (i % 5) + 1,
+        winding: 10 + (i % 3) * 5,
+        pq: i % 2 === 0 ? "Yes" : "No",
+        clq: i % 2 === 1 ? "Yes" : "No",
+        lastRate: 95 + i,
+      },
+      {
+        id: 2,
+        name: `Item B${i + 1}`,
+        qty: 15 + i,
+        rate: 120 + i,
+        grade: (i % 5) + 1,
+        winding: 15 + (i % 3) * 5,
+        pq: i % 2 === 0 ? "Yes" : "No",
+        clq: i % 2 === 1 ? "Yes" : "No",
+        lastRate: 110 + i,
+      },
+    ],
+  }));
+
+  const getMockInquiryById = useCallback(
+    (id) => {
+      if (!id) return inquiriesData[0];
+      // If id follows our mock pattern "Inq-N", return the matching mock
+      const match = String(id).match(/Inq-(\d+)/);
+      if (match) {
+        const idx = Number(match[1]) - 1;
+        if (inquiriesData[idx]) return inquiriesData[idx];
+      }
+      // If id looks numeric but not Inq-N, try to pick an index from the tail
+      const numericMatch = String(id).match(/(\d+)$/);
+      if (numericMatch) {
+        const idx = (Number(numericMatch[1]) - 1) % inquiriesData.length;
+        return { ...inquiriesData[idx], id };
+      }
+      // Fallback: return first mock but set the requested id
+      return { ...inquiriesData[0], id };
+    },
+    [inquiriesData]
+  );
+
+  const isServerErrorOrNotFound = (err) => {
+    const status = err?.response?.status;
+    return status === 500 || status === 404;
+  };
 
   // Fetch list (optionally accept filters)
   const fetchInquiries = useCallback(
@@ -100,16 +160,26 @@ export const InquiryProvider = ({ children }) => {
 
         const data = await fetchWithDedup(url, opts);
 
+        // if server returned nothing (null/empty), treat as missing and use mock fallback
+        const useFallback =
+          data == null || (Array.isArray(data) && data.length === 0);
+
         // update state only when mounted
         if (!mountedRef.current) return data;
 
         if (opts.id) {
-          setCurrentInquiry(data);
+          setCurrentInquiry(useFallback ? getMockInquiryById(opts.id) : data);
         } else {
-          setInquiries(Array.isArray(data) ? data : []);
+          setInquiries(
+            Array.isArray(data) && !useFallback ? data : inquiriesData
+          );
         }
 
-        return data;
+        return useFallback
+          ? opts.id
+            ? getMockInquiryById(opts.id)
+            : inquiriesData
+          : data;
       } catch (err) {
         if (!mountedRef.current) return null;
         // ignore abort errors if you like:
@@ -117,6 +187,21 @@ export const InquiryProvider = ({ children }) => {
           // request was cancelled
           return null;
         }
+
+        // If the server returned 500 or 404, use mock fallback instead of surfacing error
+        if (isServerErrorOrNotFound(err)) {
+          if (opts.id) {
+            const mock = getMockInquiryById(opts.id);
+            setCurrentInquiry(mock);
+            if (mountedRef.current) setLoading(false);
+            return mock;
+          } else {
+            setInquiries(inquiriesData);
+            if (mountedRef.current) setLoading(false);
+            return inquiriesData;
+          }
+        }
+
         console.error(
           "Fetch Inquiries Error:",
           err?.response?.data ?? err.message
@@ -131,7 +216,7 @@ export const InquiryProvider = ({ children }) => {
         if (mountedRef.current) setLoading(false);
       }
     },
-    [fetchWithDedup]
+    [fetchWithDedup, inquiriesData, getMockInquiryById]
   );
 
   // Fetch a single inquiry by id (convenience wrapper)
@@ -146,7 +231,15 @@ export const InquiryProvider = ({ children }) => {
           `/api/inquiryRoutes/getInquiries/${id}`,
           { id }
         );
+
+        // If API returned falsy, use mock
         if (!mountedRef.current) return data;
+        if (data == null) {
+          const mock = getMockInquiryById(id);
+          setCurrentInquiry(mock);
+          return mock;
+        }
+
         setCurrentInquiry(data);
         return data;
       } catch (err) {
@@ -154,6 +247,13 @@ export const InquiryProvider = ({ children }) => {
         if (err?.name === "CanceledError" || err?.message === "canceled") {
           return null;
         }
+
+        if (isServerErrorOrNotFound(err)) {
+          const mock = getMockInquiryById(id);
+          setCurrentInquiry(mock);
+          return mock;
+        }
+
         console.error(
           "Fetch Inquiry Error:",
           err?.response?.data ?? err.message
@@ -168,7 +268,7 @@ export const InquiryProvider = ({ children }) => {
         if (mountedRef.current) setLoading(false);
       }
     },
-    [fetchWithDedup]
+    [fetchWithDedup, getMockInquiryById]
   );
 
   // Auto-fetch list once on mount (guarded to avoid double-fetch in Strict Mode)

@@ -26,11 +26,13 @@ import { motion, useAnimation } from "framer-motion";
 import { useAuth } from "../context/AuthContext";
 import { useInquiries } from "../context/InquiryContext";
 import HeroSectionLoginPage from "./HeroSectionLoginPage";
+import { useNavigate } from "react-router-dom";
 
 const MotionBox = motion(Box);
 
 export default function LoginPage() {
   const { login } = useAuth();
+  const navigate = useNavigate();
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -41,7 +43,7 @@ export default function LoginPage() {
     localStorage.setItem("selectedInquiry", JSON.stringify(inquiries));
     e.preventDefault();
     login(username, password);
-    // navigate("/inquiries");
+    navigate("/inquiries");
   };
 
   const { colorMode, toggleColorMode } = useColorMode();
