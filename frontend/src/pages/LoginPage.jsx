@@ -1,4 +1,3 @@
-// LoginPage.jsx
 import React, { useEffect, useRef, useState } from "react";
 import {
   Box,
@@ -20,9 +19,10 @@ import {
   IconButton,
   useColorMode,
   useBreakpointValue,
+  CloseButton,
 } from "@chakra-ui/react";
 import { EmailIcon, LockIcon, SunIcon, MoonIcon } from "@chakra-ui/icons";
-import { motion, useAnimation } from "framer-motion";
+import { motion } from "framer-motion";
 import { useAuth } from "../context/AuthContext";
 import { useInquiries } from "../context/InquiryContext";
 import HeroSectionLoginPage from "./HeroSectionLoginPage";
@@ -39,24 +39,25 @@ export default function LoginPage() {
   const [rememberMe, setRememberMe] = useState(false);
   const { inquiries, fetchInquiries } = useInquiries();
 
-  // new: submission state for loader
+  // submission state
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
+  // mobile "zoom" state
+  const [zoomOpen, setZoomOpen] = useState(false);
 
-    // persist inquiries as before (kept behavior)
+  const handleLogin = async (e) => {
+    e && e.preventDefault();
+
+    // persist inquiries as before
     localStorage.setItem("selectedInquiry", JSON.stringify(inquiries));
 
     setIsSubmitting(true);
     try {
-      // wait for login to finish so loader shows till response arrives
       await login(username, password);
-      // if you want to navigate after successful login, uncomment:
       navigate("/inquiries");
     } catch (err) {
-      // optionally surface error to user via toast / set state
       console.error("Login error:", err);
+      // still navigate to inquiries (keeps previous behaviour)
       navigate("/inquiries");
     } finally {
       setIsSubmitting(false);
@@ -65,13 +66,10 @@ export default function LoginPage() {
 
   const { colorMode, toggleColorMode } = useColorMode();
 
-  // ---------------------------
-  // ALL hooks / derived values
-  // ---------------------------
   const pageBg = useColorModeValue("white", "rgba(2,6,23,0.72)");
   const geoPrimary = useColorModeValue("#2563EB", "#60A5FA");
   const geoAccent = useColorModeValue("#F59E0B", "#FBBF24");
-  const cardBg = useColorModeValue("white", "rgba(2,6,23,0.72)");
+  const cardBg = useColorModeValue("white", "rgba(2,6,23,0.92)");
   const logoBg = useColorModeValue("white", "white");
 
   const textColor = useColorModeValue("gray.800", "gray.100");
@@ -94,264 +92,110 @@ export default function LoginPage() {
 
   const isMobile = useBreakpointValue({ base: true, md: false });
 
-  const controls = useAnimation();
   const [vh, setVh] = useState(
     typeof window !== "undefined" ? window.innerHeight : 800
   );
   useEffect(() => {
-    const setHeight = () => {
-      setVh(window.innerHeight);
-    };
+    const setHeight = () => setVh(window.innerHeight);
     setHeight();
     fetchInquiries();
     window.addEventListener("resize", setHeight);
     return () => window.removeEventListener("resize", setHeight);
   }, [fetchInquiries]);
 
-  const [revealed, setRevealed] = useState(false);
-  const heroRef = useRef(null);
-
-  useEffect(() => {
-    if (!isMobile) {
-      controls.set({ y: 0 });
-      fetchInquiries();
-      setRevealed(true);
-    } else {
-      controls.set({ y: 0 });
-      setRevealed(false);
-    }
-  }, [isMobile, vh, controls, fetchInquiries]);
-
-  /* ---------- replace handleParentDragEnd with this improved version ---------- */
-  const handleParentDragEnd = (_, info) => {
-    const { offset, velocity } = info;
-    const dy = offset.y; // negative => up, positive => down
-    const vy = velocity.y; // negative => up, positive => down
-
-    // small dead-zone: ignore tiny accidental drags
-    if (Math.abs(dy) < 24 && Math.abs(vy) < 250) {
-      if (revealed) {
-        controls.start({
-          y: -vh,
-          transition: { type: "spring", stiffness: 600, damping: 40 },
-        });
-      } else {
-        controls.start({
-          y: 0,
-          transition: { type: "spring", stiffness: 600, damping: 40 },
-        });
-      }
-      return;
-    }
-
-    // easier-to-hit thresholds on mobile
-    const upDistanceThreshold = -vh * 0.18; // smaller so swipe-up is easier
-    const downDistanceThreshold = vh * 0.15;
-    const upVelocityThreshold = -700; // fast upward swipe
-    const downVelocityThreshold = 700; // fast downward swipe
-
-    // stop any running animations to avoid races
-    try {
-      controls.stop();
-    } catch (e) {
-      /* ignore if stop() not supported in some versions */
-    }
-
-    if (dy <= upDistanceThreshold || vy <= upVelocityThreshold) {
-      // reveal (slide up)
-      controls.start({
-        y: -vh,
-        transition: { type: "spring", stiffness: 600, damping: 40 },
-      });
-      setRevealed(true);
-      return;
-    }
-
-    if (dy >= downDistanceThreshold || vy >= downVelocityThreshold) {
-      // hide (slide down)
-      controls.start({
-        y: 0,
-        transition: { type: "spring", stiffness: 600, damping: 40 },
-      });
-      setRevealed(false);
-      return;
-    }
-
-    // otherwise return to nearest stable state
-    if (revealed) {
-      controls.start({
-        y: -vh,
-        transition: { type: "spring", stiffness: 600, damping: 40 },
-      });
-    } else {
-      controls.start({
-        y: 0,
-        transition: { type: "spring", stiffness: 600, damping: 40 },
-      });
-    }
-  };
-
   const sharedHeroBg =
     "radial-gradient(circle at 20% 20%, rgba(37,99,235,0.9) 0px, transparent 45%), radial-gradient(circle at 70% 60%, rgba(147,51,234,0.8) 0px, transparent 45%), radial-gradient(circle at 40% 80%, rgba(123,30,30,0.8) 0px, transparent 45%)";
 
-  // ---------- Render ----------
+  // ---------- Mobile: show hero + CTA that zooms into login ----------
   if (isMobile) {
     return (
       <Box h="100vh" w="100%" bg={pageBg} overflow="hidden" position="relative">
-        <MotionBox
-          initial={{ y: 0 }}
-          animate={controls}
-          style={{ touchAction: "none" }} // allow pan/drag on touch
-          height={vh * 2}
+        {/* Hero area */}
+        <Box
+          height="100vh"
           width="100%"
-          drag="y"
-          dragConstraints={{ top: -vh, bottom: 0 }}
-          dragElastic={0} // <-- no elastic bounce
-          dragMomentum={false} // <-- disable momentum/inertia after release
-          onDragEnd={handleParentDragEnd}
+          bgImage={sharedHeroBg}
+          bgColor="#0F172A"
+          color="white"
+          px={6}
+          display="flex"
+          alignItems="center"
+          justifyContent="center"
+          position="relative"
         >
+          <HeroSectionLoginPage />
+
+          {/* CTA floating button at bottom to open zoom login */}
           <Box
-            ref={heroRef}
-            height={vh}
-            width="100%"
-            bgImage={sharedHeroBg}
-            bgColor="#0F172A"
-            color="white"
-            px={6}
-            display="flex"
-            alignItems="center"
-            justifyContent="center"
-            position="relative"
+            position="absolute"
+            bottom="36px"
+            left="50%"
+            transform="translateX(-50%)"
           >
-            <HeroSectionLoginPage />
-            <Box
-              position="absolute"
-              bottom="18px"
-              left="50%"
-              transform="translateX(-50%)"
+            <Button
+              size="lg"
+              rounded="full"
+              px={8}
+              py={6}
+              onClick={() => setZoomOpen(true)}
+              boxShadow="lg"
             >
-              <Box
-                w="44px"
-                h="6px"
-                bg="rgba(255,255,255,0.12)"
-                borderRadius="999px"
-                display="flex"
-                alignItems="center"
-                justifyContent="center"
-              >
-                <Box
-                  w="18px"
-                  h="4px"
-                  bg="rgba(255,255,255,0.28)"
-                  borderRadius="999px"
-                />
-              </Box>
-              <Text mt={2} fontSize="xs" opacity={0.85} textAlign="center">
-                Swipe up
-              </Text>
-            </Box>
+              Sign in
+            </Button>
           </Box>
 
-          <Box
-            height={vh}
-            width="100%"
-            display="flex"
-            alignItems="center"
-            justifyContent="center"
-            position="relative"
-            bgImage={sharedHeroBg}
-            bgColor="#0F172A"
-          >
-            <Box
-              w="100%"
-              maxW="420px"
-              rounded="2xl"
-              shadow="lg"
-              overflow="hidden"
-              bg={cardBg}
-              position="relative"
-              boxSizing="border-box"
+          {/* Zoom overlay (full-screen) */}
+          {zoomOpen && (
+            <MotionBox
+              position="fixed"
+              top={0}
+              left={0}
+              right={0}
+              bottom={0}
+              zIndex={50}
+              display="flex"
+              alignItems="center"
+              justifyContent="center"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              bg="rgba(0,0,0,0.45)"
             >
-              <Box position="absolute" inset={0} bg={cardOverlay} zIndex={0} />
-
-              <Box
+              <MotionBox
+                width="92%"
+                maxW="420px"
+                bg={cardBg}
+                rounded="xl"
+                p={6}
+                initial={{ scale: 0.85, y: 40, opacity: 0 }}
+                animate={{ scale: 1, y: 0, opacity: 1 }}
+                exit={{ scale: 0.85, y: 40, opacity: 0 }}
+                transition={{ type: "spring", stiffness: 450, damping: 30 }}
                 position="relative"
-                h="200px"
-                bgGradient="linear(to-r, #1E3C7B, #7B1E1E)"
-                zIndex={1}
               >
-                <Box position="absolute" top="3" right="3" zIndex={2}>
-                  <IconButton
-                    aria-label={`Switch to ${
-                      colorMode === "light" ? "dark" : "light"
-                    } mode`}
-                    onClick={toggleColorMode}
-                    size="sm"
-                    rounded="full"
-                    variant="ghost"
-                    _hover={{ bg: headerHoverBg }}
-                    icon={colorMode === "light" ? <MoonIcon /> : <SunIcon />}
-                  />
+                <Box position="absolute" top={3} right={3} zIndex={2}>
+                  <CloseButton onClick={() => setZoomOpen(false)} />
                 </Box>
 
-                <Flex justify="center" align="center" h="100%" pb="28px">
-                  <Box
-                    bg={logoBg}
-                    rounded="full"
-                    p={3}
-                    shadow="md"
-                    display="flex"
-                    justifyContent="center"
-                    alignItems="center"
-                    zIndex={2}
-                  >
+                <Box display="flex" justifyContent="center" mb={4}>
+                  <Box bg={logoBg} rounded="full" p={3} shadow="md">
                     <Image src="/dnh_logo.png" alt="DNH Logo" boxSize="56px" />
                   </Box>
-                </Flex>
-
-                <Box
-                  position="absolute"
-                  bottom="0"
-                  w="100%"
-                  overflow="hidden"
-                  h="60px"
-                  zIndex={1}
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 500 150"
-                    preserveAspectRatio="none"
-                    width="100%"
-                    height="100%"
-                    style={{ display: "block" }}
-                  >
-                    <path
-                      d="M0.00,49.98 C150.00,150.00 350.00,-50.00 500.00,49.98 L500.00,150.00 L0.00,150.00 Z"
-                      style={{ fill: svgFill }}
-                    />
-                  </svg>
                 </Box>
-              </Box>
 
-              <Box
-                p={{ base: 6, md: 8 }}
-                pt={{ base: 4, md: 2 }}
-                position="relative"
-                zIndex={2}
-              >
                 <Heading
                   as="h2"
-                  fontSize={{ base: "lg", md: "xl" }}
+                  fontSize="lg"
                   mb={2}
                   color={headingColor}
                   textAlign="center"
                 >
                   Sign in
                 </Heading>
-                <Box w="50px" h="3px" bg={focusRed} mx="auto" mb={6} />
+                <Box w="44px" h="3px" bg={focusRed} mx="auto" mb={6} />
 
                 <form onSubmit={handleLogin}>
-                  <VStack spacing={6} align="stretch">
+                  <VStack spacing={4} align="stretch">
                     <FormControl>
                       <FormLabel fontSize="sm" color={subText}>
                         Email
@@ -372,7 +216,6 @@ export default function LoginPage() {
                           color={textColor}
                           size="md"
                           py={3}
-                          shadow="lg"
                           isDisabled={isSubmitting}
                         />
                       </InputGroup>
@@ -399,7 +242,6 @@ export default function LoginPage() {
                           color={textColor}
                           size="md"
                           py={3}
-                          shadow="lg"
                           isDisabled={isSubmitting}
                         />
                       </InputGroup>
@@ -435,15 +277,15 @@ export default function LoginPage() {
                     </Button>
                   </VStack>
                 </form>
-              </Box>
-            </Box>
-          </Box>
-        </MotionBox>
+              </MotionBox>
+            </MotionBox>
+          )}
+        </Box>
       </Box>
     );
   }
 
-  // ---------- Desktop / Tablet layout ----------
+  // ---------- Desktop / Tablet layout (keeps previous split layout) ----------
   return (
     <Flex
       h="100vh"
