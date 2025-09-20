@@ -24,14 +24,25 @@ import {
   BreadcrumbLink,
   FormControl,
   FormErrorMessage,
+  useBreakpointValue,
+  Stack,
+  Avatar,
+  Badge,
+  Icon,
+  Spacer,
+  Collapse,
+  Tooltip,
+  Grid,
+  GridItem,
 } from "@chakra-ui/react";
 import { useLocation, useNavigate } from "react-router-dom";
 import ConfirmDialog from "../components/Shared/ConfirmDialog";
 import { API_BASE } from "../api/authApi";
+import { InfoOutlineIcon, CheckIcon, ArrowBackIcon } from "@chakra-ui/icons";
 
-/* keep your normalizeInquiryForUI and normalizeItemForUI as-is (paste them here) */
-/* ... (USE the same helpers you shared earlier) */
-
+/* ---------------------------
+   Normalize helpers (same as you provided)
+   --------------------------- */
 const normalizeInquiryForUI = (maybe) => {
   if (!maybe) return null;
   if (maybe.id && maybe.items) return maybe;
@@ -118,7 +129,7 @@ const normalizeItemForUI = (maybeItem) => {
       it?.id ??
       it?.lineId ??
       (typeof it?.INQ_ITEM !== "undefined"
-        ? String(it.INQ_ITEM)
+        ? String(it?.INQ_ITEM)
         : "unknown-item"),
     name:
       it?.name ??
@@ -140,6 +151,18 @@ const normalizeItemForUI = (maybeItem) => {
   };
 };
 
+/* ---------------------------
+   Small UI helpers
+   --------------------------- */
+const StatusBadge = ({ children }) => (
+  <Badge px={2} py={0.5} rounded="full" colorScheme="teal" fontSize="xs">
+    {children}
+  </Badge>
+);
+
+/* ---------------------------
+   Main component
+   --------------------------- */
 export default function NegotiationPage() {
   const { state } = useLocation();
   const navigate = useNavigate();
@@ -148,19 +171,19 @@ export default function NegotiationPage() {
   const inquiry = normalizeInquiryForUI(providedInquiry);
   const item = normalizeItemForUI(providedItem);
 
-  const pageBg = useColorModeValue("gray.100", "gray.900");
+  // color tokens
+  const pageBg = useColorModeValue("gray.50", "gray.900");
   const cardBg = useColorModeValue("white", "gray.800");
-  const borderColor = useColorModeValue("gray.200", "gray.600");
-  const textColor = useColorModeValue("gray.700", "gray.200");
+  const borderColor = useColorModeValue("gray.200", "gray.700");
+  const textColor = useColorModeValue("gray.800", "gray.100");
+  const muted = useColorModeValue("gray.600", "gray.300");
 
+  // hooks (always at top)
   const toast = useToast();
   const { isOpen, onOpen, onClose } = useDisclosure();
   const [action, setAction] = useState(null);
   const [loading, setLoading] = useState(false);
-
-  // refs for approver inputs to auto-focus next one
   const approverRefs = [useRef(null), useRef(null), useRef(null)];
-
   const [negotiation, setNegotiation] = useState({
     MANDT: "120",
     VBELN: inquiry?.id ?? "",
@@ -181,56 +204,32 @@ export default function NegotiationPage() {
     A2_UNAME: "",
     A3_UNAME: "",
   });
-
   const [lockedApprovers, setLockedApprovers] = useState([false, false, false]);
 
-  const toggleLockApprover = (idx) => {
-    const aKey = `A${idx + 1}_QTY`;
-    const v = negotiation[aKey];
-
-    // Do not allow locking if value is empty or zero
-    const isEmptyOrZero =
-      v === "" || v === null || typeof v === "undefined" || Number(v) === 0;
-    if (isEmptyOrZero) {
-      toast({
-        title: "Cannot lock",
-        description: `Cannot lock A${idx + 1} because value is empty or zero.`,
-        status: "warning",
-      });
-      return;
+  const goBack = () => {
+    try {
+      // history length heuristic: if > 2, we likely can go back (page loaded from app navigation)
+      if (window.history && window.history.length > 2) {
+        navigate(-1);
+      } else {
+        navigate("/inquiries");
+      }
+    } catch (err) {
+      navigate("/inquiries");
     }
-
-    setLockedApprovers((prev) => {
-      const next = [...prev];
-      next[idx] = !next[idx];
-      return next;
-    });
   };
 
-  // Consider a value "filled" if:
-  // - it is a non-empty string (text), OR
-  // - it is numeric and > 0
+  // breakpoint hook (always call)
+  const isMobile = useBreakpointValue({ base: true, md: false });
+
+  // small util
   const isMeaningfulValue = (v) => {
     if (v === null || typeof v === "undefined") return false;
     const s = String(v).trim();
     if (s === "") return false;
-    // if non-numeric text (remarks), treat as meaningful
     const n = Number(s);
     if (isNaN(n)) return true;
     return n > 0;
-  };
-
-  // helper: consider a field "filled" only if it is NOT empty and not zero
-  const hasApproverValue = (key) => {
-    const v = negotiation?.[key];
-    if (v === null || typeof v === "undefined") return false;
-    // treat empty string as empty
-    if (String(v).trim() === "") return false;
-    // treat zero (0 or "0") as empty for locking purposes
-    const n = Number(v);
-    if (!isNaN(n) && n === 0) return false;
-    // otherwise it's a meaningful non-zero value
-    return true;
   };
 
   const currentUserName =
@@ -244,6 +243,7 @@ export default function NegotiationPage() {
   const getPaddedPosnr = (posnr) =>
     String(posnr ?? negotiation.POSNR ?? item?.id ?? 0).padStart(6, "0");
 
+  // fetch negotiation row
   useEffect(() => {
     if (!inquiry?.id || !item?.id) return;
 
@@ -253,8 +253,6 @@ export default function NegotiationPage() {
           inquiry.id
         }/${getPaddedPosnr(item.id)}`;
         const resp = await axios.get(url);
-
-        // resp.data might be the object itself OR wrapped like { status:'ok', data: { ... } }
         const raw = resp?.data;
         const sapRow = raw && raw.data ? raw.data : raw;
 
@@ -263,7 +261,6 @@ export default function NegotiationPage() {
           return;
         }
 
-        // Map SAP fields to strings for controlled inputs (so inputs don't flip between number/undefined)
         const mapped = {
           MANDT: sapRow.MANDT ?? "120",
           VBELN: sapRow.VBELN ?? inquiry.id ?? "",
@@ -286,7 +283,6 @@ export default function NegotiationPage() {
         };
 
         setNegotiation((prev) => ({ ...prev, ...mapped }));
-        // Auto-lock approvers that have meaningful values (number > 0 or non-empty text)
         setLockedApprovers([
           isMeaningfulValue(mapped.A1_QTY),
           isMeaningfulValue(mapped.A2_QTY),
@@ -306,26 +302,18 @@ export default function NegotiationPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inquiry?.id, item?.id]);
 
-  const handleNegotiationChange = (key, value) => {
-    setNegotiation((prev) => ({
-      ...prev,
-      [key]: value,
-    }));
-  };
+  // handlers
+  const handleNegotiationChange = (key, value) =>
+    setNegotiation((prev) => ({ ...prev, [key]: value }));
 
-  // remove the setTimeout autofocus here
   const handleApproverChange = (idx, val) => {
     const aKey = `A${idx + 1}_QTY`;
     const aUserKey = `A${idx + 1}_UNAME`;
-
     setNegotiation((prev) => {
       const next = { ...prev, [aKey]: val };
-      // set approver username only when value provided & not already set
       if (val) next[aUserKey] = prev[aUserKey] || currentUserName;
       return next;
     });
-
-    // DO NOT auto-focus here — keep input editable until user intentionally moves (Enter/Blur)
   };
 
   const focusNextApprover = (idx) => {
@@ -339,10 +327,8 @@ export default function NegotiationPage() {
     return !negotiation[prevAKey];
   };
 
-  // returns { ok: boolean, message?:string, rows: {index: message|null} }
   const validateSequentialApprovers = () => {
     const rowErrors = {};
-    // detect gaps: if A2 set and A1 empty -> error; same for A3/A2
     for (let i = 2; i <= 3; i++) {
       const aKey = `A${i}_QTY`;
       const prevKey = `A${i - 1}_QTY`;
@@ -350,7 +336,6 @@ export default function NegotiationPage() {
         rowErrors[i - 1] = `Fill A${i - 1} before A${i}.`;
       }
     }
-    // ensure at least one approver exists for Approve action
     const anyApproverFilled = !!(
       negotiation.A1_QTY ||
       negotiation.A2_QTY ||
@@ -407,7 +392,6 @@ export default function NegotiationPage() {
       return;
     }
 
-    // For Approve: ensure at least one approver filled
     if (mode === "Approve" && !seqValid.anyApproverFilled) {
       toast({
         title: "Cannot approve",
@@ -425,7 +409,6 @@ export default function NegotiationPage() {
       const config = {
         method: "post",
         url,
-
         data: payload,
       };
 
@@ -460,9 +443,9 @@ export default function NegotiationPage() {
     await callSaveOrApprove(action);
   };
 
-  // validation object used in render to show row errors
   const validation = validateSequentialApprovers();
 
+  // quick empty state
   if (!inquiry || !item) {
     return (
       <Flex
@@ -485,79 +468,148 @@ export default function NegotiationPage() {
   const rows = [0, 1, 2];
 
   return (
-    <Flex minH="100vh" bg={pageBg} justify="center" p={0}>
-      <Box w="100%" maxW="100%" bg={cardBg} rounded="2xl" shadow="xl" p={6}>
-        <Breadcrumb mb={4} fontSize="sm">
-          <BreadcrumbItem>
-            <BreadcrumbLink onClick={() => navigate("/inquiries")}>
-              Inquiry
-            </BreadcrumbLink>
-          </BreadcrumbItem>
-          <BreadcrumbItem>
-            <BreadcrumbLink onClick={() => navigate(-1)}>Item</BreadcrumbLink>
-          </BreadcrumbItem>
-          <BreadcrumbItem isCurrentPage>
-            <BreadcrumbLink>Negotiation</BreadcrumbLink>
-          </BreadcrumbItem>
-        </Breadcrumb>
-
-        <Box
-          position="sticky"
-          top="0"
-          bg={cardBg}
-          zIndex="5"
-          p={3}
-          borderBottom="1px solid"
-          borderColor={borderColor}
-          mb={4}
-        >
-          <Heading size="md" color={textColor}>
-            {inquiry.id} ({inquiry.qty}) – {inquiry.customer}
-          </Heading>
-          <Text fontSize="sm" color="gray.500">
-            {inquiry.sales}
-          </Text>
+    <Flex minH="100vh" bg={pageBg} justify="center" p={{ base: 1, md: 1 }}>
+      <Box
+        w="100%"
+        maxW="100%"
+        bg={cardBg}
+        rounded="2xl"
+        shadow="xl"
+        p={{ base: 4, md: 6 }}
+      >
+        {/* Back + breadcrumb row (logical back behaviour + breadcrumb trail) */}
+        <Box mb={4}>
+          <HStack spacing={3} align="center">
+            {/* Logical Back button */}
+            <Button
+              variant="ghost"
+              size="sm"
+              leftIcon={<ArrowBackIcon />}
+              onClick={goBack}
+              aria-label="Go back"
+            >
+              Back
+            </Button>
+          </HStack>
         </Box>
 
+        {/* Header */}
+        <Grid
+          templateColumns={{ base: "1fr", md: "auto 1fr auto" }}
+          gap={4}
+          alignItems="center"
+          mb={4}
+        >
+          <GridItem>
+            <Avatar
+              name={inquiry.customer}
+              size="md"
+              bg="teal.500"
+              color="white"
+            />
+          </GridItem>
+
+          <GridItem>
+            <Heading size="md" color={textColor}>
+              {inquiry.id}{" "}
+              <Text as="span" color={muted} fontSize="sm">
+                ({inquiry.qty})
+              </Text>
+            </Heading>
+            <Text fontSize="sm" color={muted} mt={1}>
+              {inquiry.customer} •{" "}
+              <Text as="span" color="muted">
+                {inquiry.sales}
+              </Text>
+            </Text>
+          </GridItem>
+
+          <GridItem>
+            <HStack
+              spacing={2}
+              justify={{ base: "flex-start", md: "flex-end" }}
+            >
+              <Tooltip label="Negotiation info">
+                <Button
+                  leftIcon={<InfoOutlineIcon />}
+                  size="sm"
+                  variant="ghost"
+                  onClick={() =>
+                    toast({
+                      title: "Info",
+                      description:
+                        "Enter seller & approver rates to negotiate.",
+                      status: "info",
+                    })
+                  }
+                >
+                  Info
+                </Button>
+              </Tooltip>
+              <StatusBadge>Negotiation</StatusBadge>
+            </HStack>
+          </GridItem>
+        </Grid>
+
+        {/* Item summary */}
         <Box
           p={4}
           border="1px solid"
           borderColor={borderColor}
           rounded="lg"
           mb={6}
+          bg={cardBg}
         >
-          <Text fontWeight="semibold" mb={2} color={textColor}>
-            {item.name} ({item.qty})
-          </Text>
-          <Text fontSize="sm" color={textColor}>
-            Qty: {item.qty} | Rate: {item.rate}
-          </Text>
-          <Text fontSize="sm" color={textColor}>
-            Grade: {item.grade} | Winding: {item.winding}
-          </Text>
-          <Text fontSize="sm" color={textColor}>
-            PQ: {item.pq} | CLQ: {item.clq}
-          </Text>
-          <Text fontSize="sm" color={textColor}>
-            Last Negotiated Rate: {item.lastRate}
-          </Text>
+          <HStack justify="space-between" align="start">
+            <Box>
+              <Text fontWeight="semibold" color={textColor}>
+                {item.name}
+              </Text>
+              <Text fontSize="sm" color={muted} mt={1}>
+                {item.qty} units • Rate {item.rate}
+              </Text>
+            </Box>
+
+            <HStack spacing={4}>
+              <Box textAlign="right">
+                <Text fontSize="sm" color={muted}>
+                  Last rate
+                </Text>
+                <Text fontWeight="semibold" color={textColor}>
+                  {item.lastRate}
+                </Text>
+              </Box>
+              <Box textAlign="right">
+                <Text fontSize="sm" color={muted}>
+                  Grade
+                </Text>
+                <Text fontWeight="semibold" color={textColor}>
+                  {item.grade}
+                </Text>
+              </Box>
+            </HStack>
+          </HStack>
+
+          <HStack mt={3} spacing={3}>
+            <Text fontSize="sm" color={muted}>
+              Winding: {item.winding}
+            </Text>
+            <Text fontSize="sm" color={muted}>
+              PQ: {item.pq}
+            </Text>
+            <Text fontSize="sm" color={muted}>
+              CLQ: {item.clq}
+            </Text>
+          </HStack>
         </Box>
 
         <Heading size="sm" mb={3} color={textColor}>
-          Negotiation Table
+          Negotiation
         </Heading>
 
-        <Table size="sm" variant="striped" colorScheme="gray" mb={6}>
-          <Thead>
-            <Tr>
-              <Th>Stage</Th>
-              <Th>Seller Rate (C#)</Th>
-              <Th>Approver Rate (A#)</Th>
-              <Th>Approver Name</Th>
-              <Th>Remarks</Th>
-            </Tr>
-          </Thead>
-          <Tbody>
+        {/* Mobile stacked cards */}
+        {isMobile ? (
+          <VStack spacing={4} align="stretch" mb={6}>
             {rows.map((rIdx) => {
               const stage = rIdx + 1;
               const cKey = `C${stage}_QTY`;
@@ -566,42 +618,61 @@ export default function NegotiationPage() {
               const aUserKey = `A${stage}_UNAME`;
               const rowError =
                 validation.rowErrors?.[stage] ??
-                validation.rowErrors?.[rIdx + 1] ??
-                validation.rowErrors?.[stage];
-              // Note: validation.rowErrors keys correspond to stage indexes in this implementation
+                validation.rowErrors?.[rIdx + 1];
+
               return (
-                <Tr key={stage}>
-                  <Td>{`Stage ${stage}`}</Td>
+                <Box
+                  key={stage}
+                  p={4}
+                  bg={cardBg}
+                  rounded="lg"
+                  shadow="sm"
+                  border="1px solid"
+                  borderColor={rowError ? "red.200" : borderColor}
+                >
+                  <HStack justify="space-between" mb={2}>
+                    <Text fontWeight="semibold">Stage {stage}</Text>
+                    <HStack spacing={2}>
+                      <Text fontSize="xs" color={muted}>
+                        Approver
+                      </Text>
+                      <Text fontSize="xs" color={muted} fontWeight="semibold">
+                        {negotiation[aUserKey] || "-"}
+                      </Text>
+                    </HStack>
+                  </HStack>
 
-                  {/* Seller rate (C#) - editable independently */}
-                  <Td>
-                    <Input
-                      type="number"
-                      value={negotiation[cKey] ?? ""}
-                      onChange={(e) =>
-                        handleNegotiationChange(cKey, e.target.value)
-                      }
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          focusNextApprover(rIdx);
+                  <VStack spacing={3} align="stretch">
+                    <FormControl>
+                      <Text fontSize="xs" color={muted}>
+                        Seller Rate (C{stage})
+                      </Text>
+                      <Input
+                        type="number"
+                        value={negotiation[cKey] ?? ""}
+                        onChange={(e) =>
+                          handleNegotiationChange(cKey, e.target.value)
                         }
-                      }}
-                      // seller rate should NOT be locked by approver locks:
-                      disabled={
-                        isApproverDisabled(rIdx) || lockedApprovers[rIdx]
-                      }
-                      border="1px solid"
-                      borderColor="gray.200"
-                      rounded="md"
-                      px={2}
-                      py={1}
-                    />
-                  </Td>
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            focusNextApprover(rIdx);
+                          }
+                        }}
+                        disabled={
+                          isApproverDisabled(rIdx) || lockedApprovers[rIdx]
+                        }
+                        rounded="md"
+                        px={3}
+                        py={2}
+                        aria-label={`Seller rate stage ${stage}`}
+                      />
+                    </FormControl>
 
-                  {/* Approver rate (A#) */}
-                  <Td>
                     <FormControl isInvalid={!!rowError}>
+                      <Text fontSize="xs" color={muted}>
+                        Approver Rate (A{stage})
+                      </Text>
                       <Input
                         ref={approverRefs[rIdx]}
                         type="number"
@@ -618,49 +689,145 @@ export default function NegotiationPage() {
                         disabled={
                           isApproverDisabled(rIdx) || lockedApprovers[rIdx]
                         }
-                        border="1px solid"
-                        borderColor={rowError ? "red.300" : "gray.200"}
                         rounded="md"
-                        px={2}
-                        py={1}
+                        px={3}
+                        py={2}
+                        aria-label={`Approver rate stage ${stage}`}
                       />
                       {rowError && (
                         <FormErrorMessage>{rowError}</FormErrorMessage>
                       )}
                     </FormControl>
-                  </Td>
 
-                  {/* Approver name (read-only) */}
-                  <Td>
-                    <Text>{negotiation[aUserKey] || "-"}</Text>
-                  </Td>
-
-                  {/* Remarks */}
-                  <Td>
-                    <Input
-                      value={negotiation[rKey] ?? ""}
-                      onChange={(e) =>
-                        handleNegotiationChange(rKey, e.target.value)
-                      }
-                      // Remarks locked when approver is locked
-                      disabled={lockedApprovers[rIdx]}
-                      border="1px solid"
-                      borderColor="gray.200"
-                      rounded="md"
-                      px={2}
-                      py={1}
-                    />
-                  </Td>
-                </Tr>
+                    <FormControl>
+                      <Text fontSize="xs" color={muted}>
+                        Remarks
+                      </Text>
+                      <Input
+                        value={negotiation[rKey] ?? ""}
+                        onChange={(e) =>
+                          handleNegotiationChange(rKey, e.target.value)
+                        }
+                        disabled={lockedApprovers[rIdx]}
+                        rounded="md"
+                        px={3}
+                        py={2}
+                        aria-label={`Remarks stage ${stage}`}
+                      />
+                    </FormControl>
+                  </VStack>
+                </Box>
               );
             })}
-          </Tbody>
-        </Table>
+          </VStack>
+        ) : (
+          /* Desktop / Tablet table with horizontal fallback */
+          <Box overflowX="auto" mb={6}>
+            <Box minW="760px">
+              <Table size="sm" variant="striped" colorScheme="gray">
+                <Thead>
+                  <Tr>
+                    <Th>Stage</Th>
+                    <Th>Seller Rate (C#)</Th>
+                    <Th>Approver Rate (A#)</Th>
+                    <Th>Approver Name</Th>
+                    <Th>Remarks</Th>
+                  </Tr>
+                </Thead>
+                <Tbody>
+                  {rows.map((rIdx) => {
+                    const stage = rIdx + 1;
+                    const cKey = `C${stage}_QTY`;
+                    const aKey = `A${stage}_QTY`;
+                    const rKey = `R${stage}_TEXT`;
+                    const aUserKey = `A${stage}_UNAME`;
+                    const rowError =
+                      validation.rowErrors?.[stage] ??
+                      validation.rowErrors?.[rIdx + 1];
 
-        <VStack spacing={4}>
+                    return (
+                      <Tr key={stage}>
+                        <Td>{`Stage ${stage}`}</Td>
+                        <Td>
+                          <Input
+                            type="number"
+                            value={negotiation[cKey] ?? ""}
+                            onChange={(e) =>
+                              handleNegotiationChange(cKey, e.target.value)
+                            }
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                focusNextApprover(rIdx);
+                              }
+                            }}
+                            disabled={
+                              isApproverDisabled(rIdx) || lockedApprovers[rIdx]
+                            }
+                            rounded="md"
+                            px={3}
+                            py={2}
+                            aria-label={`Seller rate stage ${stage}`}
+                          />
+                        </Td>
+                        <Td>
+                          <FormControl isInvalid={!!rowError}>
+                            <Input
+                              ref={approverRefs[rIdx]}
+                              type="number"
+                              value={negotiation[aKey] ?? ""}
+                              onChange={(e) =>
+                                handleApproverChange(rIdx, e.target.value)
+                              }
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  focusNextApprover(rIdx);
+                                }
+                              }}
+                              disabled={
+                                isApproverDisabled(rIdx) ||
+                                lockedApprovers[rIdx]
+                              }
+                              rounded="md"
+                              px={3}
+                              py={2}
+                              aria-label={`Approver rate stage ${stage}`}
+                            />
+                            {rowError && (
+                              <FormErrorMessage>{rowError}</FormErrorMessage>
+                            )}
+                          </FormControl>
+                        </Td>
+                        <Td>
+                          <Text>{negotiation[aUserKey] || "-"}</Text>
+                        </Td>
+                        <Td>
+                          <Input
+                            value={negotiation[rKey] ?? ""}
+                            onChange={(e) =>
+                              handleNegotiationChange(rKey, e.target.value)
+                            }
+                            disabled={lockedApprovers[rIdx]}
+                            rounded="md"
+                            px={3}
+                            py={2}
+                            aria-label={`Remarks stage ${stage}`}
+                          />
+                        </Td>
+                      </Tr>
+                    );
+                  })}
+                </Tbody>
+              </Table>
+            </Box>
+          </Box>
+        )}
+
+        {/* Desktop actions inline, mobile will also see fixed bottom bar */}
+        <HStack spacing={4} align="center" mb={4}>
           <Button
             colorScheme="blue"
-            w="100px"
             isLoading={loading && action === "Save"}
             onClick={() => {
               setAction("Save");
@@ -670,16 +837,14 @@ export default function NegotiationPage() {
             Save
           </Button>
 
-          <HStack spacing={4} w="min-content">
+          <HStack spacing={3}>
             <Button
               colorScheme="green"
-              w="100px"
               isLoading={loading && action === "Approve"}
               onClick={() => {
                 setAction("Approve");
                 onOpen();
               }}
-              // disable Approve if sequential validation fails or no approver entered
               isDisabled={!validation.ok || !validation.anyApproverFilled}
             >
               Approve
@@ -687,7 +852,6 @@ export default function NegotiationPage() {
 
             <Button
               colorScheme="red"
-              w="100px"
               isLoading={loading && action === "Reject"}
               onClick={() => {
                 setAction("Reject");
@@ -697,10 +861,108 @@ export default function NegotiationPage() {
               Reject
             </Button>
           </HStack>
-        </VStack>
 
-        <Divider my={6} />
+          <Spacer />
+
+          {/* <HStack spacing={3}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                // helpful quick-fill: copy seller C1 -> approver A1 if empty (non-destructive)
+                if (!negotiation.A1_QTY && negotiation.C1_QTY) {
+                  setNegotiation((prev) => ({
+                    ...prev,
+                    A1_QTY: prev.C1_QTY,
+                    A1_UNAME: prev.A1_UNAME || currentUserName,
+                  }));
+                  toast({
+                    title: "Copied",
+                    description: "C1 copied into A1",
+                    status: "info",
+                  });
+                } else {
+                  toast({
+                    title: "No action",
+                    description: "Either A1 is set or C1 is empty",
+                    status: "warning",
+                  });
+                }
+              }}
+            >
+              Quick copy
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                // toggle lock preview (not persistent)
+                setLockedApprovers((p) => p.map(Boolean));
+                toast({ title: "Locked preview", status: "info" });
+              }}
+            >
+              Lock preview
+            </Button>
+          </HStack> */}
+        </HStack>
       </Box>
+
+      {/* Mobile fixed action bar */}
+      {/* {isMobile && (
+        <Collapse in={true} animateOpacity>
+          <Box
+            position="fixed"
+            left="0"
+            right="0"
+            bottom="0"
+            bg={cardBg}
+            borderTop="1px solid"
+            borderColor={borderColor}
+            // p={3}
+            shadow="lg"
+          >
+            <HStack maxW="1000px" mx="auto" spacing={3}>
+              <Button
+                flex="1"
+                size="sm"
+                colorScheme="blue"
+                isLoading={loading && action === "Save"}
+                onClick={() => {
+                  setAction("Save");
+                  onOpen();
+                }}
+              >
+                Save
+              </Button>
+              <Button
+                flex="1"
+                size="sm"
+                colorScheme="green"
+                isLoading={loading && action === "Approve"}
+                onClick={() => {
+                  setAction("Approve");
+                  onOpen();
+                }}
+                isDisabled={!validation.ok || !validation.anyApproverFilled}
+              >
+                Approve
+              </Button>
+              <Button
+                flex="1"
+                size="sm"
+                colorScheme="red"
+                isLoading={loading && action === "Reject"}
+                onClick={() => {
+                  setAction("Reject");
+                  onOpen();
+                }}
+              >
+                Reject
+              </Button>
+            </HStack>
+          </Box>
+        </Collapse>
+      )} */}
 
       <ConfirmDialog
         isOpen={isOpen}

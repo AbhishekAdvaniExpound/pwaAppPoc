@@ -3,6 +3,7 @@
 const { default: axios } = require("axios");
 const { BaseUrlBackend } = require("./baseUrls");
 const https = require("https");
+const { notifyAll } = require("../push/notifyHelper");
 
 // Mock inquiries array
 const inquiries = Array.from({ length: 42 }, (_, i) => ({
@@ -39,32 +40,72 @@ const inquiries = Array.from({ length: 42 }, (_, i) => ({
   ],
 }));
 
+// exports.getInquiries - patched with robust, non-blocking notify and diagnostics
 exports.getInquiries = async (req, res) => {
   try {
-    const response = await axios.get(
+    const apiResp = await axios.get(
       `${BaseUrlBackend}/zinq/getinq?sap-client=120`,
       {
         httpsAgent: new https.Agent({ rejectUnauthorized: false }),
         auth: {
-          username: process.env.SAP_USERNAME, // store in .env
-          password: process.env.SAP_PASSWORD, // store in .env
+          username: process.env.SAP_USERNAME,
+          password: process.env.SAP_PASSWORD,
         },
       }
     );
 
-    const inquiries = response.data;
+    // Use a distinct variable name to avoid shadowing/ confusion with the mock above
+    const remoteInquiries = apiResp?.data ?? [];
+    const inquriesLength = Array.isArray(remoteInquiries)
+      ? remoteInquiries.length
+      : 1;
 
-    res.status(200).json({
+    console.log("getInquiries: fetched from SAP, count =", inquriesLength);
+
+    // Fire-and-forget notify: wrap in Promise.resolve().then so both sync throws and async rejects are caught
+    Promise.resolve()
+      .then(async () => {
+        try {
+          // Log the payload we will send
+          const payload = {
+            title: "Latest Inquiries successfully fetched.",
+            body: `Latest ${inquriesLength} Inquiries successfully fetched.`,
+            // optional: attach small meta so notifyHelper can log/route
+            meta: { source: "getInquiries", count: inquriesLength },
+          };
+          console.log("getInquiries: calling notifyAll with payload:", payload);
+
+          const notifyResult = await notifyAll(payload);
+
+          // If your notifyAll returns something useful, log it
+          console.log("getInquiries: notifyAll result:", notifyResult);
+        } catch (err) {
+          console.error(
+            "getInquiries: Push send error:",
+            err && err.stack ? err.stack : err
+          );
+        }
+      })
+      .catch((err) => {
+        // This outer catch should rarely fire, but keep it as a safeguard
+        console.error("getInquiries: unexpected notify wrapper error:", err);
+      });
+
+    // Send response back to client (do not wait for notifyAll)
+    return res.status(200).json({
       success: true,
-      total: Array.isArray(inquiries) ? inquiries.length : 1,
-      data: inquiries,
+      total: Array.isArray(remoteInquiries) ? remoteInquiries.length : 1,
+      data: remoteInquiries,
     });
   } catch (error) {
-    console.error("Error fetching inquiries:", error.message);
-    res.status(500).json({
+    console.error(
+      "Error fetching inquiries:",
+      error && error.stack ? error.stack : error
+    );
+    return res.status(500).json({
       success: false,
       message: "Failed to fetch inquiries",
-      error: error.message,
+      error: error?.message || String(error),
     });
   }
 };
@@ -282,6 +323,11 @@ exports.getNegotiation = async (req, res) => {
         data,
       });
     }
+    // ✅ Send push notification (async fire-and-forget, don’t block response)
+    notifyAll({
+      title: "getNegotiation 🎉",
+      body: `User getNegotiation.`,
+    }).catch((err) => console.error("Push send error:", err));
 
     // non 2xx
     return res.status(resp.status).json({

@@ -361,21 +361,30 @@ export default function InquiryListPage({ inquiryparams }) {
   );
 
   /* -------------------------
-     Filtering + pagination + UI helpers (unchanged)
+     Normalize raw inquiries for UI (so filter/search use same shape)
+  ------------------------- */
+  const normalizedInquiries = useMemo(() => {
+    return (inquiries || []).map((inq, idx) => normalizeInquiry(inq, idx));
+  }, [inquiries]);
+
+  /* -------------------------
+     Filtering + pagination + UI helpers (fixed to use normalized objects)
   ------------------------- */
   const filteredInquiries = useMemo(() => {
-    return inquiries?.filter((inq) => {
+    const q = (search || "").toLowerCase();
+    return normalizedInquiries.filter((inq) => {
       const matchesFilter = filter === "All" ? true : inq.status === filter;
       const matchesSearch =
-        (inq.customer || "")
-          .toLowerCase()
-          .includes((search || "").toLowerCase()) ||
-        (inq.id || "").toLowerCase().includes((search || "").toLowerCase());
+        (inq.customer || "").toLowerCase().includes(q) ||
+        (String(inq.id || "") || "").toLowerCase().includes(q);
       return matchesFilter && matchesSearch;
     });
-  }, [filter, search, inquiries]);
+  }, [filter, search, normalizedInquiries]);
 
-  const totalPages = Math.ceil(filteredInquiries.length / pageSize);
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredInquiries.length / pageSize)
+  );
   const startIndex = (page - 1) * pageSize;
   const paginatedInquiries = filteredInquiries.slice(
     startIndex,
@@ -439,6 +448,7 @@ export default function InquiryListPage({ inquiryparams }) {
   const subText = useColorModeValue("gray.600", "gray.400");
   const { isOpen, onOpen, onClose } = useDisclosure();
   const [history, setHistory] = useState([]);
+  console.log({ history });
 
   useEffect(() => {
     if ("serviceWorker" in navigator) {

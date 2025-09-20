@@ -37,7 +37,7 @@ export default function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
-  const { inquiries } = useInquiries();
+  const { inquiries, fetchInquiries } = useInquiries();
 
   const handleLogin = (e) => {
     localStorage.setItem("selectedInquiry", JSON.stringify(inquiries));
@@ -105,6 +105,7 @@ export default function LoginPage() {
       setVh(window.innerHeight);
     };
     setHeight();
+    fetchInquiries();
     window.addEventListener("resize", setHeight);
     return () => window.removeEventListener("resize", setHeight);
   }, []);
@@ -117,6 +118,7 @@ export default function LoginPage() {
   useEffect(() => {
     if (!isMobile) {
       controls.set({ y: 0 });
+      fetchInquiries();
       setRevealed(true); // desktop shows both side-by-side in existing layout
     } else {
       controls.set({ y: 0 });
