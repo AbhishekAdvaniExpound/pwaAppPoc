@@ -13,6 +13,7 @@ exports.login = async (req, res) => {
       method: "get",
       maxBodyLength: Infinity,
       url,
+      timeout: 15000, // optional: fail fast if backend doesn't respond
       headers: {
         Authorization:
           "Basic " + Buffer.from(`${username}:${password}`).toString("base64"),
@@ -22,7 +23,6 @@ exports.login = async (req, res) => {
 
     const response = await axios.request(config);
 
-    // ✅ Send push notification (async fire-and-forget, don’t block response)
     notifyAll({
       title: "Login Successful 🎉",
       body: `User ${username} logged in successfully.`,
@@ -34,7 +34,23 @@ exports.login = async (req, res) => {
       data: response.data,
     });
   } catch (error) {
-    console.error("Login Error:", error.message);
+    console.error("Login Error:", error && (error.stack || error.message));
+
+    const isTimeout =
+      error?.code === "ETIMEDOUT" ||
+      /connect ETIMEDOUT/i.test(error?.message || "") ||
+      error?.message?.includes("timeout");
+
+    if (isTimeout) {
+      // Tell the client explicitly that it's a VPN / network timeout
+      return res.status(504).json({
+        success: false,
+        message: "VPN not connected!",
+        error: error.message,
+      });
+    }
+
+    // other errors
     return res.status(500).json({
       success: false,
       message: "Login failed",
