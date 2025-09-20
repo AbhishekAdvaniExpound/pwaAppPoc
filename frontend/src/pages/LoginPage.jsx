@@ -122,43 +122,71 @@ export default function LoginPage() {
     }
   }, [isMobile, vh, controls, fetchInquiries]);
 
+  /* ---------- replace handleParentDragEnd with this improved version ---------- */
   const handleParentDragEnd = (_, info) => {
     const { offset, velocity } = info;
-    const dy = offset.y;
-    const vy = velocity.y;
+    const dy = offset.y; // negative => up, positive => down
+    const vy = velocity.y; // negative => up, positive => down
 
-    const upDistanceThreshold = -vh * 0.25;
+    // small dead-zone: ignore tiny accidental drags
+    if (Math.abs(dy) < 24 && Math.abs(vy) < 250) {
+      if (revealed) {
+        controls.start({
+          y: -vh,
+          transition: { type: "spring", stiffness: 600, damping: 40 },
+        });
+      } else {
+        controls.start({
+          y: 0,
+          transition: { type: "spring", stiffness: 600, damping: 40 },
+        });
+      }
+      return;
+    }
+
+    // easier-to-hit thresholds on mobile
+    const upDistanceThreshold = -vh * 0.18; // smaller so swipe-up is easier
     const downDistanceThreshold = vh * 0.15;
-    const upVelocityThreshold = -800;
-    const downVelocityThreshold = 700;
+    const upVelocityThreshold = -700; // fast upward swipe
+    const downVelocityThreshold = 700; // fast downward swipe
+
+    // stop any running animations to avoid races
+    try {
+      controls.stop();
+    } catch (e) {
+      /* ignore if stop() not supported in some versions */
+    }
 
     if (dy <= upDistanceThreshold || vy <= upVelocityThreshold) {
+      // reveal (slide up)
       controls.start({
         y: -vh,
-        transition: { type: "spring", stiffness: 300, damping: 30 },
+        transition: { type: "spring", stiffness: 600, damping: 40 },
       });
       setRevealed(true);
       return;
     }
 
     if (dy >= downDistanceThreshold || vy >= downVelocityThreshold) {
+      // hide (slide down)
       controls.start({
         y: 0,
-        transition: { type: "spring", stiffness: 300, damping: 30 },
+        transition: { type: "spring", stiffness: 600, damping: 40 },
       });
       setRevealed(false);
       return;
     }
 
+    // otherwise return to nearest stable state
     if (revealed) {
       controls.start({
         y: -vh,
-        transition: { type: "spring", stiffness: 300, damping: 30 },
+        transition: { type: "spring", stiffness: 600, damping: 40 },
       });
     } else {
       controls.start({
         y: 0,
-        transition: { type: "spring", stiffness: 300, damping: 30 },
+        transition: { type: "spring", stiffness: 600, damping: 40 },
       });
     }
   };
@@ -173,12 +201,13 @@ export default function LoginPage() {
         <MotionBox
           initial={{ y: 0 }}
           animate={controls}
-          style={{ touchAction: "none" }}
+          style={{ touchAction: "none" }} // allow pan/drag on touch
           height={vh * 2}
           width="100%"
           drag="y"
           dragConstraints={{ top: -vh, bottom: 0 }}
-          dragElastic={0.15}
+          dragElastic={0} // <-- no elastic bounce
+          dragMomentum={false} // <-- disable momentum/inertia after release
           onDragEnd={handleParentDragEnd}
         >
           <Box
