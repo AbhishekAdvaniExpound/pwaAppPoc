@@ -22,7 +22,6 @@ import {
   useBreakpointValue,
 } from "@chakra-ui/react";
 import { EmailIcon, LockIcon, SunIcon, MoonIcon } from "@chakra-ui/icons";
-import { useNavigate } from "react-router-dom";
 import { motion, useAnimation } from "framer-motion";
 import { useAuth } from "../context/AuthContext";
 import { useInquiries } from "../context/InquiryContext";
@@ -31,7 +30,6 @@ import HeroSectionLoginPage from "./HeroSectionLoginPage";
 const MotionBox = motion(Box);
 
 export default function LoginPage() {
-  const navigate = useNavigate();
   const { login } = useAuth();
 
   const [username, setUsername] = useState("");
@@ -108,7 +106,7 @@ export default function LoginPage() {
     fetchInquiries();
     window.addEventListener("resize", setHeight);
     return () => window.removeEventListener("resize", setHeight);
-  }, []);
+  }, [fetchInquiries]);
 
   // state to remember whether login is revealed
   const [revealed, setRevealed] = useState(false);

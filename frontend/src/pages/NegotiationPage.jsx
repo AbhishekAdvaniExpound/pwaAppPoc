@@ -8,7 +8,6 @@ import {
   Text,
   HStack,
   Button,
-  Divider,
   useColorModeValue,
   Input,
   useDisclosure,
@@ -19,18 +18,12 @@ import {
   Th,
   Td,
   useToast,
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
   FormControl,
   FormErrorMessage,
   useBreakpointValue,
-  Stack,
   Avatar,
   Badge,
-  Icon,
   Spacer,
-  Collapse,
   Tooltip,
   Grid,
   GridItem,
@@ -38,7 +31,7 @@ import {
 import { useLocation, useNavigate } from "react-router-dom";
 import ConfirmDialog from "../components/Shared/ConfirmDialog";
 import { API_BASE } from "../api/authApi";
-import { InfoOutlineIcon, CheckIcon, ArrowBackIcon } from "@chakra-ui/icons";
+import { InfoOutlineIcon, ArrowBackIcon } from "@chakra-ui/icons";
 
 /* ---------------------------
    Normalize helpers (same as you provided)
