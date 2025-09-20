@@ -1,9 +1,8 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Box,
   Flex,
   Heading,
-  Text,
   Input,
   Button,
   FormControl,
@@ -95,6 +94,8 @@ export default function LoginPage() {
   const [vh, setVh] = useState(
     typeof window !== "undefined" ? window.innerHeight : 800
   );
+  console.log({ vh });
+
   useEffect(() => {
     const setHeight = () => setVh(window.innerHeight);
     setHeight();
