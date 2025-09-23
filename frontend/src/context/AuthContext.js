@@ -1,6 +1,8 @@
 // src/context/AuthContext.js
 import React, { createContext, useContext, useState, useEffect } from "react";
+import axios from "axios";
 import { useToast } from "@chakra-ui/react";
+import { API_BASE } from "../api/authApi";
 import { useNavigate } from "react-router-dom";
 
 // Create Context
@@ -12,36 +14,63 @@ export const useAuth = () => useContext(AuthContext);
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const toast = useToast();
   const navigate = useNavigate();
 
-  // Direct login — no API call
+  // Login function
   const login = async (username, password) => {
     setLoading(true);
+    setError("");
     try {
-      const userData = {
-        username: username || "demoUser",
-        role: "admin",
-      };
-
-      setUser(userData);
-      localStorage.setItem("user", JSON.stringify(userData));
-      localStorage.setItem("username", username);
-
-      toast({
-        title: "Login Successful",
-        description: `Welcome ${username || "Demo User"}!`,
-        status: "success",
-        duration: 3000,
-        isClosable: true,
-        position: "top-right",
+      const response = await axios.post(`${API_BASE}/api/login`, {
+        username,
+        password,
       });
 
-      navigate("/inquiries");
+      if (response.data.success) {
+        // Attach username explicitly
+        const userData = {
+          ...response.data.data,
+          username, // ✅ ensure username is saved
+        };
+
+        setUser(userData);
+        localStorage.setItem("user", JSON.stringify(userData));
+        localStorage.setItem("username", username);
+
+        // ✅ Success toast
+        toast({
+          title: "Login Successful",
+          description: `Welcome ${username}!`,
+          status: "success",
+          duration: 3000,
+          isClosable: true,
+          position: "top-right",
+        });
+
+        navigate("/inquiries");
+      } else {
+        setError("Invalid login response");
+
+        // ❌ Error toast
+        toast({
+          title: "Login Failed",
+          description: "Invalid response from server",
+          status: "error",
+          duration: 4000,
+          isClosable: true,
+          position: "top-right",
+        });
+      }
     } catch (err) {
+      const errMsg = err.response?.data?.message || "Login failed";
+      setError(errMsg);
+
+      // ❌ Error toast
       toast({
         title: "Login Failed",
-        description: "Unexpected error occurred",
+        description: errMsg,
         status: "error",
         duration: 4000,
         isClosable: true,
@@ -56,8 +85,8 @@ export const AuthProvider = ({ children }) => {
   const logout = () => {
     setUser(null);
     localStorage.removeItem("user");
-    localStorage.removeItem("username");
 
+    // ⚠️ Info toast
     toast({
       title: "Logged out",
       description: "You have been logged out successfully",
@@ -66,8 +95,6 @@ export const AuthProvider = ({ children }) => {
       isClosable: true,
       position: "top-right",
     });
-
-    navigate("/");
   };
 
   useEffect(() => {
@@ -78,7 +105,7 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, login, logout, loading, error }}>
       {children}
     </AuthContext.Provider>
   );

@@ -216,7 +216,40 @@ export default function InquiryListPage({ inquiryparams }) {
   const { state } = useLocation();
   const { logout } = useAuth();
   const navigate = useNavigate();
+  // --- mock data fallback (used when server returns 500/404 or response is empty) ---
+  const inquiriesDatass = Array.from({ length: 42 }, (_, i) => ({
+    id: `Inq-${i + 1}`,
+    qty: 10 + i, // just to vary a bit
+    customer: `Customer Name with longer text that may overflow (${i + 1})`,
+    broker: i % 2 === 0 ? `Broker Name with longer text too (${i + 1})` : null,
+    sales: `Sales Person (${i + 1})`,
+    status: i % 3 === 0 ? "High Priority" : i % 3 === 1 ? "Pending" : "Normal",
 
+    items: [
+      {
+        id: 1,
+        name: `Item A${i + 1}`,
+        qty: 20 + i,
+        rate: 100 + i,
+        grade: (i % 5) + 1,
+        winding: 10 + (i % 3) * 5,
+        pq: i % 2 === 0 ? "Yes" : "No",
+        clq: i % 2 === 1 ? "Yes" : "No",
+        lastRate: 95 + i,
+      },
+      {
+        id: 2,
+        name: `Item B${i + 1}`,
+        qty: 15 + i,
+        rate: 120 + i,
+        grade: (i % 5) + 1,
+        winding: 15 + (i % 3) * 5,
+        pq: i % 2 === 0 ? "Yes" : "No",
+        clq: i % 2 === 1 ? "Yes" : "No",
+        lastRate: 110 + i,
+      },
+    ],
+  }));
   // -------------------------
   // New: local cached/fetched list state + keys
   // -------------------------
@@ -233,7 +266,8 @@ export default function InquiryListPage({ inquiryparams }) {
     try {
       const res = await axios.get(`${API_BASE}/api/inquiryRoutes/getInquiries`);
       // handle variations in API shape
-      const list = res?.data?.data ?? res?.data ?? [];
+      // const list = res?.data?.data ?? res?.data ?? [];
+      const list = inquiriesDatass;
       if (Array.isArray(list)) {
         setInquiriesData(list);
         try {
@@ -245,13 +279,14 @@ export default function InquiryListPage({ inquiryparams }) {
         // sometimes API returns object with nested array
         console.warn("Unexpected list shape from API, expected array:", list);
         setInquiriesData([]);
+        setInquiriesData(inquiriesDatass);
       }
       return list;
     } catch (err) {
       console.error("Failed to fetch inquiries from API", err);
       return null;
     }
-  }, []);
+  }, [inquiriesDatass]);
 
   // On mount: load from location.state -> localStorage -> API
   useEffect(() => {
@@ -259,7 +294,9 @@ export default function InquiryListPage({ inquiryparams }) {
     (async () => {
       // If navigation passed an entire list array, use and persist it
       if (Array.isArray(incomingState) && incomingState.length > 0) {
-        setInquiriesData(incomingState);
+        // setInquiriesData(incomingState);
+        setInquiriesData(inquiriesDatass);
+
         try {
           localStorage.setItem(LIST_LS_KEY, JSON.stringify(incomingState));
         } catch (e) {}
@@ -270,7 +307,9 @@ export default function InquiryListPage({ inquiryparams }) {
       try {
         const saved = JSON.parse(localStorage.getItem(LIST_LS_KEY) || "null");
         if (mounted && Array.isArray(saved) && saved.length > 0) {
-          setInquiriesData(saved);
+          // setInquiriesData(saved);
+          setInquiriesData(inquiriesDatass);
+
           return;
         }
       } catch (e) {
@@ -364,8 +403,10 @@ export default function InquiryListPage({ inquiryparams }) {
      Normalize raw inquiries for UI (so filter/search use same shape)
   ------------------------- */
   const normalizedInquiries = useMemo(() => {
-    return (inquiries || []).map((inq, idx) => normalizeInquiry(inq, idx));
-  }, [inquiries]);
+    return (inquiriesDatass || []).map((inq, idx) =>
+      normalizeInquiry(inq, idx)
+    );
+  }, [inquiriesDatass]);
 
   /* -------------------------
      Filtering + pagination + UI helpers (fixed to use normalized objects)
