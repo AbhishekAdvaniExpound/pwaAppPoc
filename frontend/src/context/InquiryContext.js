@@ -184,6 +184,7 @@ export const InquiryProvider = ({ children }) => {
   );
 
   // Fetch a single inquiry by id (convenience wrapper)
+  // Fetch a single inquiry by id (convenience wrapper with mock fallback)
   const fetchInquiryById = useCallback(
     async (id) => {
       if (!id) return null;
@@ -200,24 +201,35 @@ export const InquiryProvider = ({ children }) => {
         return data;
       } catch (err) {
         if (!mountedRef.current) return null;
+
         if (err?.name === "CanceledError" || err?.message === "canceled") {
           return null;
         }
+
         console.error(
           "Fetch Inquiry Error:",
           err?.response?.data ?? err.message
         );
+
+        // ✅ Fallback: use mock inquiry by ID (or first mock)
+        const fallback =
+          mockInquiries.find((inq) => String(inq.id) === String(id)) ||
+          mockInquiries[0];
+
+        setCurrentInquiry(fallback);
+
         setError({
           message: err.message,
           status: err?.response?.status,
           body: err?.response?.data,
         });
-        return null;
+
+        return fallback;
       } finally {
         if (mountedRef.current) setLoading(false);
       }
     },
-    [fetchWithDedup]
+    [fetchWithDedup, mockInquiries]
   );
 
   // Auto-fetch list once on mount (guarded to avoid double-fetch in Strict Mode)
