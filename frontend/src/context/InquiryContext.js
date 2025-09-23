@@ -145,6 +145,7 @@ export const InquiryProvider = ({ children }) => {
 
         if (opts.id) {
           setCurrentInquiry(data);
+          console.log({ data });
         } else {
           setInquiries(
             Array.isArray(data) && data.length > 0
