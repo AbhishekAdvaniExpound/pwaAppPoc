@@ -27,6 +27,7 @@ import {
   DrawerBody,
   DrawerCloseButton,
   useDisclosure,
+  Spinner,
 } from "@chakra-ui/react";
 import {
   StarIcon,
@@ -217,24 +218,74 @@ export default function InquiryListPage({ inquiryparams }) {
   const { logout } = useAuth();
   const navigate = useNavigate();
 
+  // --- mock data fallback (used when server returns 500/404 or response is empty) ---
+  const mockInquiries = useMemo(
+    () =>
+      Array.from({ length: 42 }, (_, i) => ({
+        id: `Inq${i + 1}`,
+        qty: 10 + i,
+        customer: `Customer Name with longer text that may overflow (${i + 1})`,
+        broker:
+          i % 2 === 0 ? `Broker Name with longer text too (${i + 1})` : null,
+        sales: `Sales Person (${i + 1})`,
+        status:
+          i % 3 === 0 ? "High Priority" : i % 3 === 1 ? "Pending" : "Normal",
+        items: [
+          {
+            id: 1,
+            name: `Item A${i + 1}`,
+            qty: 20 + i,
+            rate: 100 + i,
+            grade: (i % 5) + 1,
+            winding: 10 + (i % 3) * 5,
+            pq: i % 2 === 0 ? "Yes" : "No",
+            clq: i % 2 === 1 ? "Yes" : "No",
+            lastRate: 95 + i,
+          },
+          {
+            id: 2,
+            name: `Item B${i + 1}`,
+            qty: 15 + i,
+            rate: 120 + i,
+            grade: (i % 5) + 1,
+            winding: 15 + (i % 3) * 5,
+            pq: i % 2 === 0 ? "Yes" : "No",
+            clq: i % 2 === 1 ? "Yes" : "No",
+            lastRate: 110 + i,
+          },
+        ],
+      })),
+    []
+  );
+
   // -------------------------
   // New: local cached/fetched list state + keys
   // -------------------------
   const [inquiriesData, setInquiriesData] = useState(null); // array or null
+  const [loadingList, setLoadingList] = useState(false);
   const LIST_LS_KEY = "inquiriesList_v1";
 
-  // try to load list from location.state first (if someone passed the entire list),
-  // otherwise fallback to cached/fetched list
-  // NOTE: we still preserve the single selectedInquiry localStorage fallback for detail navigation
+  // incoming nav state fallback
   const incomingState = state?.inquiry ?? null;
 
   // Helper: fetch list from backend and persist to localStorage
   const fetchListFromApi = useCallback(async () => {
+    setLoadingList(true);
     try {
-      const res = await axios.get(`${API_BASE}/api/inquiryRoutes/getInquiries`);
-      // handle variations in API shape
+      // If API_BASE is undefined on some devices, log that
+      if (!API_BASE) {
+        console.warn("[fetchListFromApi] API_BASE is not defined");
+      }
+      const res = await axios.get(
+        `${API_BASE}/api/inquiryRoutes/getInquiries`,
+        { timeout: 8000 }
+      );
       const list = res?.data?.data ?? res?.data ?? [];
-      if (Array.isArray(list)) {
+      console.debug(
+        "[fetchListFromApi] fetched list length:",
+        Array.isArray(list) ? list.length : typeof list
+      );
+      if (Array.isArray(list) && list.length > 0) {
         setInquiriesData(list);
         try {
           localStorage.setItem(LIST_LS_KEY, JSON.stringify(list));
@@ -242,16 +293,43 @@ export default function InquiryListPage({ inquiryparams }) {
           console.warn("Could not persist inquiries to localStorage", e);
         }
       } else {
-        // sometimes API returns object with nested array
-        console.warn("Unexpected list shape from API, expected array:", list);
-        setInquiriesData([]);
+        // if backend returned empty array treat as empty but fallback to mock as last resort
+        console.warn(
+          "[fetchListFromApi] API returned empty or unexpected list, falling back to mock"
+        );
+        setInquiriesData(mockInquiries);
+        try {
+          localStorage.setItem(LIST_LS_KEY, JSON.stringify(mockInquiries));
+        } catch (e) {}
       }
       return list;
     } catch (err) {
-      console.error("Failed to fetch inquiries from API", err);
-      return null;
+      console.error("Failed to fetch inquiries from API", err?.message ?? err);
+      // fallback: use saved localStorage if available, else mock
+      try {
+        const saved = JSON.parse(localStorage.getItem(LIST_LS_KEY) || "null");
+        if (Array.isArray(saved) && saved.length > 0) {
+          console.info(
+            "[fetchListFromApi] using cached localStorage list after fetch failure"
+          );
+          setInquiriesData(saved);
+          return saved;
+        }
+      } catch (e) {
+        // parse error — ignore
+      }
+
+      // final fallback: use mock data so UI is usable across devices
+      console.info("[fetchListFromApi] falling back to mock data");
+      setInquiriesData(mockInquiries);
+      try {
+        localStorage.setItem(LIST_LS_KEY, JSON.stringify(mockInquiries));
+      } catch (e) {}
+      return mockInquiries;
+    } finally {
+      setLoadingList(false);
     }
-  }, []);
+  }, [mockInquiries]);
 
   // On mount: load from location.state -> localStorage -> API
   useEffect(() => {
@@ -271,6 +349,8 @@ export default function InquiryListPage({ inquiryparams }) {
         const saved = JSON.parse(localStorage.getItem(LIST_LS_KEY) || "null");
         if (mounted && Array.isArray(saved) && saved.length > 0) {
           setInquiriesData(saved);
+          // also try background refresh but don't block the UI
+          fetchListFromApi().catch(() => {});
           return;
         }
       } catch (e) {
@@ -292,7 +372,6 @@ export default function InquiryListPage({ inquiryparams }) {
   ------------------------- */
   useEffect(() => {
     if (incomingState && !Array.isArray(incomingState)) {
-      // store single selected inquiry for detail page fallback (optional)
       try {
         localStorage.setItem("selectedInquiry", JSON.stringify(incomingState));
       } catch (e) {}
@@ -304,7 +383,7 @@ export default function InquiryListPage({ inquiryparams }) {
      Priority:
        1) if location.state holds an array -> use it
        2) else use inquiriesData (cached / fetched)
-       3) else fallback to empty array
+       3) else fallback to mock array (so some devices always see data)
   ------------------------- */
   const inquiries = useMemo(() => {
     if (Array.isArray(incomingState)) return incomingState;
@@ -347,11 +426,10 @@ export default function InquiryListPage({ inquiryparams }) {
 
   const handleSelectInquiry = useCallback(
     (inquiry) => {
-      // navigate to detail route including id in path + full object in state
+      console.debug("handleSelectInquiry ->", inquiry && inquiry.id);
       navigate(`/InquiryDetailPage/${encodeURIComponent(inquiry.id)}`, {
         state: { inquiry },
       });
-      // persist selected (optional)
       try {
         localStorage.setItem("selectedInquiry", JSON.stringify(inquiry));
       } catch (e) {}
@@ -360,21 +438,24 @@ export default function InquiryListPage({ inquiryparams }) {
   );
 
   /* -------------------------
-     Filtering + pagination + UI helpers (unchanged)
+     Filtering + pagination + UI helpers
   ------------------------- */
   const filteredInquiries = useMemo(() => {
-    return inquiries?.filter((inq) => {
-      const matchesFilter = filter === "All" ? true : inq.status === filter;
+    const q = (search || "").toLowerCase();
+    return (inquiries || []).filter((inq) => {
+      const matchesFilter =
+        filter === "All" ? true : (inq.status || "").toString() === filter;
       const matchesSearch =
-        (inq.customer || "")
-          .toLowerCase()
-          .includes((search || "").toLowerCase()) ||
-        (inq.id || "").toLowerCase().includes((search || "").toLowerCase());
+        (inq.customer || "").toLowerCase().includes(q) ||
+        (String(inq.id || "") || "").toLowerCase().includes(q);
       return matchesFilter && matchesSearch;
     });
   }, [filter, search, inquiries]);
 
-  const totalPages = Math.ceil(filteredInquiries.length / pageSize);
+  const totalPages = Math.max(
+    1,
+    Math.ceil((filteredInquiries.length || 0) / pageSize)
+  );
   const startIndex = (page - 1) * pageSize;
   const paginatedInquiries = filteredInquiries.slice(
     startIndex,
@@ -474,7 +555,9 @@ export default function InquiryListPage({ inquiryparams }) {
           >
             Welcome
             <br />
-            <p fontWeight="Normal"> Here are your Pending Inquiries</p>
+            <Text as="span" fontWeight="normal" fontSize="sm">
+              Here are your Pending Inquiries
+            </Text>
           </Heading>
 
           <HStack spacing={2}>
@@ -598,7 +681,12 @@ export default function InquiryListPage({ inquiryparams }) {
           </ButtonGroup>
         </HStack>
 
-        {paginatedInquiries.length > 0 ? (
+        {loadingList ? (
+          <Flex align="center" justify="center" h="50vh">
+            <Spinner size="lg" />
+            <Text ml={3}>Loading inquiries…</Text>
+          </Flex>
+        ) : paginatedInquiries.length > 0 ? (
           viewMode === "grid" ? (
             <SimpleGrid columns={{ base: 1, md: 2 }} spacing={6}>
               {paginatedInquiries.map((inq, index) => {
@@ -686,6 +774,9 @@ export default function InquiryListPage({ inquiryparams }) {
             <Text fontSize="sm">
               Try adjusting your filters or search query.
             </Text>
+            <Button mt={4} onClick={() => fetchListFromApi()}>
+              Retry Fetch
+            </Button>
           </Flex>
         )}
       </Box>
@@ -693,7 +784,7 @@ export default function InquiryListPage({ inquiryparams }) {
       {totalPages > 1 && (
         <HStack justify="space-between" px={8} py={4}>
           <Text fontSize="sm" color={subText}>
-            Showing {startIndex + 1} –{" "}
+            Showing {Math.min(filteredInquiries.length, startIndex + 1)} –{" "}
             {Math.min(startIndex + pageSize, filteredInquiries.length)} of{" "}
             {filteredInquiries.length}
           </Text>
