@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 // InquiryListPage.js (patched: fetch + cache fallback so list persists when returning)
 import {
   Box,
@@ -51,7 +52,7 @@ import React, {
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { API_BASE } from "../api/authApi";
-import axios from "axios";
+// import axios from "axios";
 
 /* ---------------------------
    Helper: normalize incoming shapes
@@ -264,7 +265,7 @@ export default function InquiryListPage({ inquiryparams }) {
   // Helper: fetch list from backend and persist to localStorage
   const fetchListFromApi = useCallback(async () => {
     try {
-      const res = await axios.get(`${API_BASE}/api/inquiryRoutes/getInquiries`);
+      // const res = await axios.get(`${API_BASE}/api/inquiryRoutes/getInquiries`);
       // handle variations in API shape
       // const list = res?.data?.data ?? res?.data ?? [];
       const list = inquiriesDatass;
@@ -323,7 +324,7 @@ export default function InquiryListPage({ inquiryparams }) {
     return () => {
       mounted = false;
     };
-  }, [incomingState, fetchListFromApi]);
+  }, [incomingState, fetchListFromApi, inquiriesDatass]);
 
   /* -------------------------
      original inquiry selection fallback:
