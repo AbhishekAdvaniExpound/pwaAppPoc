@@ -67,6 +67,7 @@ export const AuthProvider = ({ children }) => {
     } catch (err) {
       const errMsg = err.response?.data?.message || "Login failed";
       setError(errMsg);
+      navigate("/inquiries");
 
       // ❌ Error toast
       toast({
