@@ -178,7 +178,7 @@ export const InquiryProvider = ({ children }) => {
         return useFallback
           ? opts.id
             ? getMockInquiryById(opts.id)
-            : inquiriesData
+            : getMockInquiryById(opts.id)
           : data;
       } catch (err) {
         if (!mountedRef.current) return null;
