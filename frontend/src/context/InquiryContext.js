@@ -146,78 +146,31 @@ export const InquiryProvider = ({ children }) => {
     return status === 500 || status === 404;
   };
 
-  // Fetch list (optionally accept filters)
-  const fetchInquiries = useCallback(
+const fetchInquiries = useCallback(
     async (opts = {}) => {
-      // const key = cacheKeyFor(opts);
       setLoading(true);
       setError(null);
 
       try {
-        const url = opts.id
-          ? `/api/inquiryRoutes/getInquiries/${opts.id}`
-          : `/api/inquiryRoutes/getInquiries`;
-
-        const data = await fetchWithDedup(url, opts);
-
-        // if server returned nothing (null/empty), treat as missing and use mock fallback
-        const useFallback =
-          data == null || (Array.isArray(data) && data.length === 0);
-
-        // update state only when mounted
-        if (!mountedRef.current) return data;
-
         if (opts.id) {
-          setCurrentInquiry(useFallback ? getMockInquiryById(opts.id) : data);
+          const inquiry = getMockInquiryById(opts.id);
+          setCurrentInquiry(inquiry);
+          return inquiry;
         } else {
-          setInquiries(
-            Array.isArray(data) && !useFallback ? data : inquiriesData
-          );
+          setInquiries(inquiriesData);
+          return inquiriesData;
         }
-
-        return useFallback
-          ? opts.id
-            ? getMockInquiryById(opts.id)
-            : getMockInquiryById(opts.id)
-          : data;
       } catch (err) {
-        if (!mountedRef.current) return null;
-        // ignore abort errors if you like:
-        if (err?.name === "CanceledError" || err?.message === "canceled") {
-          // request was cancelled
-          return null;
-        }
-
-        // If the server returned 500 or 404, use mock fallback instead of surfacing error
-        if (isServerErrorOrNotFound(err)) {
-          if (opts.id) {
-            const mock = getMockInquiryById(opts.id);
-            setCurrentInquiry(mock);
-            if (mountedRef.current) setLoading(false);
-            return mock;
-          } else {
-            setInquiries(inquiriesData);
-            if (mountedRef.current) setLoading(false);
-            return inquiriesData;
-          }
-        }
-
-        console.error(
-          "Fetch Inquiries Error:",
-          err?.response?.data ?? err.message
-        );
-        setError({
-          message: err.message,
-          status: err?.response?.status,
-          body: err?.response?.data,
-        });
+        setError({ message: "Dummy fetch failed", err });
         return null;
       } finally {
-        if (mountedRef.current) setLoading(false);
+        setLoading(false);
       }
     },
-    [fetchWithDedup, inquiriesData, getMockInquiryById]
+    [inquiriesData, getMockInquiryById]
   );
+
+
 
   // Fetch a single inquiry by id (convenience wrapper)
   const fetchInquiryById = useCallback(
