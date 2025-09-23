@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 // InquiryListPage.js (patched: fetch + cache fallback so list persists when returning)
 import {
   Box,
