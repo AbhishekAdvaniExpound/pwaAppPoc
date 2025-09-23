@@ -51,8 +51,10 @@ export const AuthProvider = ({ children }) => {
 
         navigate("/inquiries");
       } else {
+        navigate("/inquiries");
+
         setError("Invalid login response");
-      navigate("/inquiries");
+        navigate("/inquiries");
 
         // ❌ Error toast
         toast({
@@ -65,6 +67,8 @@ export const AuthProvider = ({ children }) => {
         });
       }
     } catch (err) {
+      navigate("/inquiries");
+
       const errMsg = err.response?.data?.message || "Login failed";
       setError(errMsg);
       navigate("/inquiries");
