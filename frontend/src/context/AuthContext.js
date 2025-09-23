@@ -52,6 +52,7 @@ export const AuthProvider = ({ children }) => {
         navigate("/inquiries");
       } else {
         setError("Invalid login response");
+      navigate("/inquiries");
 
         // ❌ Error toast
         toast({
