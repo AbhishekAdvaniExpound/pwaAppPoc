@@ -1,4 +1,3 @@
-/* eslint-disable no-unused-vars */
 // InquiryListPage.js (patched: fetch + cache fallback so list persists when returning)
 import {
   Box,
@@ -52,7 +51,7 @@ import React, {
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { API_BASE } from "../api/authApi";
-// import axios from "axios";
+import axios from "axios";
 
 /* ---------------------------
    Helper: normalize incoming shapes
@@ -159,7 +158,7 @@ const InquiryCard = ({
       >
         <Icon as={StatusIcon} color={`${statusColor}.500`} />
         <Text fontSize="sm" fontWeight="semibold" color={`${statusColor}.600`}>
-          {inquiry.status ?? "N/A"}
+          {inquiry.status}
         </Text>
       </HStack>
 
@@ -177,8 +176,7 @@ const InquiryCard = ({
               color={textColor}
               noOfLines={1}
             >
-              {inquiry.id ?? "N/A"} ({inquiry.qty ?? "N/A"}) –{" "}
-              {inquiry.customer ?? "N/A"}
+              {inquiry.id} ({inquiry.qty}) – {inquiry.customer}
             </Text>
           </Tooltip>
         </HStack>
@@ -187,12 +185,12 @@ const InquiryCard = ({
       {inquiry.broker && (
         <Tooltip label={inquiry.broker} hasArrow>
           <Text fontSize="sm" color={subText} pl={8} noOfLines={1}>
-            Broker: {inquiry.broker ?? "N/A"}
+            Broker: {inquiry.broker}
           </Text>
         </Tooltip>
       )}
       <Text fontSize="sm" color={subText} pl={8}>
-        Sales: {inquiry.sales ?? "N/A"}
+        Sales: {inquiry.sales}
       </Text>
     </Box>
   );
@@ -217,40 +215,7 @@ export default function InquiryListPage({ inquiryparams }) {
   const { state } = useLocation();
   const { logout } = useAuth();
   const navigate = useNavigate();
-  // --- mock data fallback (used when server returns 500/404 or response is empty) ---
-  const inquiriesDatass = Array.from({ length: 42 }, (_, i) => ({
-    id: `Inq-${i + 1}`,
-    qty: 10 + i, // just to vary a bit
-    customer: `Customer Name with longer text that may overflow (${i + 1})`,
-    broker: i % 2 === 0 ? `Broker Name with longer text too (${i + 1})` : null,
-    sales: `Sales Person (${i + 1})`,
-    status: i % 3 === 0 ? "High Priority" : i % 3 === 1 ? "Pending" : "Normal",
 
-    items: [
-      {
-        id: 1,
-        name: `Item A${i + 1}`,
-        qty: 20 + i,
-        rate: 100 + i,
-        grade: (i % 5) + 1,
-        winding: 10 + (i % 3) * 5,
-        pq: i % 2 === 0 ? "Yes" : "No",
-        clq: i % 2 === 1 ? "Yes" : "No",
-        lastRate: 95 + i,
-      },
-      {
-        id: 2,
-        name: `Item B${i + 1}`,
-        qty: 15 + i,
-        rate: 120 + i,
-        grade: (i % 5) + 1,
-        winding: 15 + (i % 3) * 5,
-        pq: i % 2 === 0 ? "Yes" : "No",
-        clq: i % 2 === 1 ? "Yes" : "No",
-        lastRate: 110 + i,
-      },
-    ],
-  }));
   // -------------------------
   // New: local cached/fetched list state + keys
   // -------------------------
@@ -265,10 +230,9 @@ export default function InquiryListPage({ inquiryparams }) {
   // Helper: fetch list from backend and persist to localStorage
   const fetchListFromApi = useCallback(async () => {
     try {
-      // const res = await axios.get(`${API_BASE}/api/inquiryRoutes/getInquiries`);
+      const res = await axios.get(`${API_BASE}/api/inquiryRoutes/getInquiries`);
       // handle variations in API shape
-      // const list = res?.data?.data ?? res?.data ?? [];
-      const list = inquiriesDatass;
+      const list = res?.data?.data ?? res?.data ?? [];
       if (Array.isArray(list)) {
         setInquiriesData(list);
         try {
@@ -280,14 +244,13 @@ export default function InquiryListPage({ inquiryparams }) {
         // sometimes API returns object with nested array
         console.warn("Unexpected list shape from API, expected array:", list);
         setInquiriesData([]);
-        setInquiriesData(inquiriesDatass);
       }
       return list;
     } catch (err) {
       console.error("Failed to fetch inquiries from API", err);
       return null;
     }
-  }, [inquiriesDatass]);
+  }, []);
 
   // On mount: load from location.state -> localStorage -> API
   useEffect(() => {
@@ -295,9 +258,7 @@ export default function InquiryListPage({ inquiryparams }) {
     (async () => {
       // If navigation passed an entire list array, use and persist it
       if (Array.isArray(incomingState) && incomingState.length > 0) {
-        // setInquiriesData(incomingState);
-        setInquiriesData(inquiriesDatass);
-
+        setInquiriesData(incomingState);
         try {
           localStorage.setItem(LIST_LS_KEY, JSON.stringify(incomingState));
         } catch (e) {}
@@ -308,9 +269,7 @@ export default function InquiryListPage({ inquiryparams }) {
       try {
         const saved = JSON.parse(localStorage.getItem(LIST_LS_KEY) || "null");
         if (mounted && Array.isArray(saved) && saved.length > 0) {
-          // setInquiriesData(saved);
-          setInquiriesData(inquiriesDatass);
-
+          setInquiriesData(saved);
           return;
         }
       } catch (e) {
@@ -324,7 +283,7 @@ export default function InquiryListPage({ inquiryparams }) {
     return () => {
       mounted = false;
     };
-  }, [incomingState, fetchListFromApi, inquiriesDatass]);
+  }, [incomingState, fetchListFromApi]);
 
   /* -------------------------
      original inquiry selection fallback:
@@ -356,7 +315,6 @@ export default function InquiryListPage({ inquiryparams }) {
      Standard UI state (mostly unchanged)
   ------------------------- */
   const { user } = useAuth();
-  console.log({ user });
   const [isSubscribed, setIsSubscribed] = useState(false);
   const { colorMode, toggleColorMode } = useColorMode();
   const [filter, setFilter] = useState("All");
@@ -401,32 +359,21 @@ export default function InquiryListPage({ inquiryparams }) {
   );
 
   /* -------------------------
-     Normalize raw inquiries for UI (so filter/search use same shape)
-  ------------------------- */
-  const normalizedInquiries = useMemo(() => {
-    return (inquiriesDatass || []).map((inq, idx) =>
-      normalizeInquiry(inq, idx)
-    );
-  }, [inquiriesDatass]);
-
-  /* -------------------------
-     Filtering + pagination + UI helpers (fixed to use normalized objects)
+     Filtering + pagination + UI helpers (unchanged)
   ------------------------- */
   const filteredInquiries = useMemo(() => {
-    const q = (search || "").toLowerCase();
-    return normalizedInquiries.filter((inq) => {
+    return inquiries?.filter((inq) => {
       const matchesFilter = filter === "All" ? true : inq.status === filter;
       const matchesSearch =
-        (inq.customer || "").toLowerCase().includes(q) ||
-        (String(inq.id || "") || "").toLowerCase().includes(q);
+        (inq.customer || "")
+          .toLowerCase()
+          .includes((search || "").toLowerCase()) ||
+        (inq.id || "").toLowerCase().includes((search || "").toLowerCase());
       return matchesFilter && matchesSearch;
     });
-  }, [filter, search, normalizedInquiries]);
+  }, [filter, search, inquiries]);
 
-  const totalPages = Math.max(
-    1,
-    Math.ceil(filteredInquiries.length / pageSize)
-  );
+  const totalPages = Math.ceil(filteredInquiries.length / pageSize);
   const startIndex = (page - 1) * pageSize;
   const paginatedInquiries = filteredInquiries.slice(
     startIndex,
@@ -490,7 +437,6 @@ export default function InquiryListPage({ inquiryparams }) {
   const subText = useColorModeValue("gray.600", "gray.400");
   const { isOpen, onOpen, onClose } = useDisclosure();
   const [history, setHistory] = useState([]);
-  console.log({ history });
 
   useEffect(() => {
     if ("serviceWorker" in navigator) {
@@ -525,18 +471,9 @@ export default function InquiryListPage({ inquiryparams }) {
             fontWeight="bold"
             color={textHeadingColor}
           >
-            Welcome,{" "}
-            {user && typeof user === "object"
-              ? user.name ||
-                user.username ||
-                user.displayName ||
-                user.email ||
-                "User"
-              : user || "User"}
+            Welcome
             <br />
-            <Text as="span" fontWeight="normal" fontSize="sm">
-              Here are your Pending Inquiries
-            </Text>
+            <p fontWeight="Normal"> Here are your Pending Inquiries</p>
           </Heading>
 
           <HStack spacing={2}>
