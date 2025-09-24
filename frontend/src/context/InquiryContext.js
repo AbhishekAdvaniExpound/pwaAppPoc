@@ -1,3 +1,4 @@
+// InquiryContext.js
 import React, {
   createContext,
   useContext,
@@ -24,6 +25,9 @@ export const InquiryProvider = ({ children }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  // whether UI is currently showing mock data instead of API
+  const [usingMock, setUsingMock] = useState(false);
+
   // caches and inflight trackers
   const cacheRef = useRef(new Map()); // simple in-memory cache
   const inFlightRef = useRef(new Map()); // map<cacheKey, Promise>
@@ -45,49 +49,7 @@ export const InquiryProvider = ({ children }) => {
     return "LIST_ALL";
   };
 
-  // Generic fetch wrapper with dedupe & cache
-  const fetchWithDedup = useCallback(async (url, opts = {}) => {
-    const cacheKey = cacheKeyFor(opts);
-
-    // return cached value immediately if present
-    if (cacheRef.current.has(cacheKey)) {
-      return cacheRef.current.get(cacheKey);
-    }
-
-    // if request already in flight for same key, return same promise
-    if (inFlightRef.current.has(cacheKey)) {
-      return inFlightRef.current.get(cacheKey);
-    }
-
-    const controller = new AbortController();
-    const promise = (async () => {
-      try {
-        const res = await api.get(url, {
-          params: opts.query,
-          signal: controller.signal,
-        });
-        const data = res?.data?.data ?? res?.data ?? null;
-        // store in cache
-        cacheRef.current.set(cacheKey, data);
-        return data;
-      } catch (err) {
-        // if aborted, rethrow so caller knows
-        throw err;
-      } finally {
-        // remove in-flight entry
-        inFlightRef.current.delete(cacheKey);
-      }
-    })();
-
-    // store controller in the Promise so it can be cancelled if needed later
-    // (not strictly necessary here but helpful if you extend cancellation)
-    promise.controller = controller;
-
-    inFlightRef.current.set(cacheKey, promise);
-    return promise;
-  }, []);
-
-  // --- mock data fallback (used when server returns 500/404 or response is empty) ---
+  // --- mock data fallback (used when user opts to show mocks) ---
   const mockInquiries = useMemo(
     () =>
       Array.from({ length: 42 }, (_, i) => ({
@@ -127,7 +89,52 @@ export const InquiryProvider = ({ children }) => {
     []
   );
 
-  // Fetch list (optionally accept filters)
+  // Generic fetch wrapper with dedupe & cache. Supports opts.force to bypass cache/inFlight.
+  const fetchWithDedup = useCallback(async (url, opts = {}) => {
+    const cacheKey = cacheKeyFor(opts);
+
+    // force clears cache and inFlight for this key
+    if (opts.force) {
+      cacheRef.current.delete(cacheKey);
+      inFlightRef.current.delete(cacheKey);
+    }
+
+    // return cached value immediately if present
+    if (cacheRef.current.has(cacheKey)) {
+      return cacheRef.current.get(cacheKey);
+    }
+
+    // if request already in flight for same key, return same promise
+    if (inFlightRef.current.has(cacheKey)) {
+      return inFlightRef.current.get(cacheKey);
+    }
+
+    const controller = new AbortController();
+    const promise = (async () => {
+      try {
+        const res = await api.get(url, {
+          params: opts.query,
+          signal: controller.signal,
+        });
+        const data = res?.data?.data ?? res?.data ?? null;
+        // store in cache
+        cacheRef.current.set(cacheKey, data);
+        return data;
+      } catch (err) {
+        throw err;
+      } finally {
+        // remove in-flight entry
+        inFlightRef.current.delete(cacheKey);
+      }
+    })();
+
+    // attach controller to promise (helpful if you later want to cancel)
+    promise.controller = controller;
+
+    inFlightRef.current.set(cacheKey, promise);
+    return promise;
+  }, []);
+
   // Fetch list (optionally accept filters)
   const fetchInquiries = useCallback(
     async (opts = {}) => {
@@ -145,13 +152,15 @@ export const InquiryProvider = ({ children }) => {
 
         if (opts.id) {
           setCurrentInquiry(data);
-          console.log({ data });
         } else {
-          setInquiries(
-            Array.isArray(data) && data.length > 0
-              ? mockInquiries
-              : mockInquiries
-          );
+          // if API returns array, use it; if null/empty, keep existing list (don't auto-use mocks)
+          if (Array.isArray(data) && data.length > 0) {
+            setInquiries(data);
+            setUsingMock(false);
+          } else {
+            // no data returned — do not auto fallback; indicate empty and let UI decide
+            setInquiries([]);
+          }
         }
 
         return data;
@@ -167,27 +176,27 @@ export const InquiryProvider = ({ children }) => {
           err?.response?.data ?? err.message
         );
 
-        // ✅ Fallback: show dummy list if API failed (500, 404, timeout, etc.)
-        setInquiries(mockInquiries);
-
+        // set error but DO NOT automatically switch to mock — consumer will prompt user
         setError({
           message: err.message,
           status: err?.response?.status,
           body: err?.response?.data,
+          url: opts.id
+            ? `/api/inquiryRoutes/getInquiries/${opts.id}`
+            : `/api/inquiryRoutes/getInquiries`,
         });
 
-        return mockInquiries;
+        return null;
       } finally {
         if (mountedRef.current) setLoading(false);
       }
     },
-    [fetchWithDedup, mockInquiries]
+    [fetchWithDedup]
   );
 
   // Fetch a single inquiry by id (convenience wrapper)
-  // Fetch a single inquiry by id (convenience wrapper with mock fallback)
   const fetchInquiryById = useCallback(
-    async (id) => {
+    async (id, opts = {}) => {
       if (!id) return null;
       setLoading(true);
       setError(null);
@@ -195,7 +204,7 @@ export const InquiryProvider = ({ children }) => {
       try {
         const data = await fetchWithDedup(
           `/api/inquiryRoutes/getInquiries/${id}`,
-          { id }
+          { id, ...opts }
         );
         if (!mountedRef.current) return data;
         setCurrentInquiry(data);
@@ -212,32 +221,78 @@ export const InquiryProvider = ({ children }) => {
           err?.response?.data ?? err.message
         );
 
-        // ✅ Fallback: use mock inquiry by ID (or first mock)
-        const fallback =
-          mockInquiries.find((inq) => String(inq.id) === String(id)) ||
-          mockInquiries[0];
+        // don't auto fallback; expose error and allow consumer to choose mock
+        setError({
+          message: err.message,
+          status: err?.response?.status,
+          body: err?.response?.data,
+          url: `/api/inquiryRoutes/getInquiries/${id}`,
+        });
 
-        setCurrentInquiry(fallback);
+        return null;
+      } finally {
+        if (mountedRef.current) setLoading(false);
+      }
+    },
+    [fetchWithDedup]
+  );
 
+  // Apply mock fallback (called when user confirms "show mock entries")
+  const applyMockFallback = useCallback(() => {
+    setInquiries(mockInquiries);
+    setUsingMock(true);
+    setError(null);
+  }, [mockInquiries]);
+
+  // Try to refresh from API (force bypass cache). Returns true if API returned data.
+  const refreshFromApi = useCallback(
+    async (opts = {}) => {
+      // clear any error first
+      setError(null);
+      setLoading(true);
+      try {
+        const url = opts.id
+          ? `/api/inquiryRoutes/getInquiries/${opts.id}`
+          : `/api/inquiryRoutes/getInquiries`;
+
+        const data = await fetchWithDedup(url, { ...opts, force: true });
+        if (!mountedRef.current) return false;
+
+        if (opts.id) {
+          if (data) {
+            setCurrentInquiry(data);
+            setUsingMock(false);
+            return true;
+          }
+          return false;
+        } else {
+          if (Array.isArray(data) && data.length > 0) {
+            setInquiries(data);
+            setUsingMock(false);
+            return true;
+          }
+          return false;
+        }
+      } catch (err) {
+        console.error("Refresh from API failed:", err?.message ?? err);
         setError({
           message: err.message,
           status: err?.response?.status,
           body: err?.response?.data,
         });
-
-        return fallback;
+        return false;
       } finally {
         if (mountedRef.current) setLoading(false);
       }
     },
-    [fetchWithDedup, mockInquiries]
+    [fetchWithDedup]
   );
 
   // Auto-fetch list once on mount (guarded to avoid double-fetch in Strict Mode)
   useEffect(() => {
     if (didInitialFetch.current) return;
     didInitialFetch.current = true;
-    // you can pass a default query here if needed
+    // initial try to fetch from API
     fetchInquiries().catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // intentionally empty — fetchInquiries is stable because of useCallback
@@ -260,8 +315,11 @@ export const InquiryProvider = ({ children }) => {
         currentInquiry,
         loading,
         error,
+        usingMock,
         fetchInquiries,
         fetchInquiryById,
+        refreshFromApi,
+        applyMockFallback,
         setCurrentInquiry,
         clearCache,
         // exposing cache/inflight for debugging (optional)

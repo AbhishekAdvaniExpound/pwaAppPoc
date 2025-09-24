@@ -1,5 +1,5 @@
 /* eslint-disable no-unused-vars */
-// InquiryListPage.js (patched: removed localStorage usage; fallback to in-memory mock only)
+// InquiryListPage.js (patched: removed localStorage usage; now uses InquiryContext for list/detail fetch + mock control)
 import {
   Box,
   Flex,
@@ -12,6 +12,7 @@ import {
   Input,
   Button,
   ButtonGroup,
+  Grid,
   useColorMode,
   useColorModeValue,
   SimpleGrid,
@@ -28,6 +29,14 @@ import {
   DrawerCloseButton,
   useDisclosure,
   Spinner,
+  useToast,
+  Alert,
+  AlertIcon,
+  AlertTitle,
+  AlertDescription,
+  InputGroup,
+  InputLeftElement,
+  InputRightElement,
 } from "@chakra-ui/react";
 import {
   StarIcon,
@@ -39,6 +48,7 @@ import {
   CheckCircleIcon,
   ArrowLeftIcon,
   ArrowRightIcon,
+  RepeatIcon,
 } from "@chakra-ui/icons";
 import { LayoutGrid, List, LogOut } from "lucide-react";
 import { Bell, BellOff } from "react-feather";
@@ -52,8 +62,7 @@ import React, {
 } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { API_BASE } from "../api/authApi";
-import axios from "axios";
+import { useInquiries } from "../context/InquiryContext";
 
 /* ---------------------------
    Helper: normalize incoming shapes
@@ -87,15 +96,17 @@ function normalizeInquiry(inq = {}, idx) {
     if (t.includes("urgent") || t.includes("high")) status = "High Priority";
     else if (t.includes("normal") || t.includes("domestic")) status = "Normal";
     else status = inquiryType || "Pending";
+  } else if (source.status) {
+    status = source.status;
   }
 
   return {
     original: source,
     id,
-    qty: source.QUANTITY || source.Quantity || 0,
+    qty: source.QUANTITY || source.Quantity || source.qty || 0,
     customer,
     shortCustomer:
-      customer.length > 40 ? customer.slice(0, 38) + "…" : customer,
+      customer?.length > 40 ? customer.slice(0, 38) + "…" : customer,
     broker,
     sales,
     status,
@@ -202,7 +213,7 @@ const InquiryCard = ({
    Utility: decode VAPID helper (kept from your file)
    --------------------------- */
 function urlBase64ToUint8Array(base64String) {
-  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const padding = "=".repeat((4 - (base64String?.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
   const rawData = window.atob(base64);
   return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
@@ -211,157 +222,74 @@ const PUBLIC_VAPID_KEY =
   "BMCht6yT0qJktTK-G1eFC56nKbrohESdcx3lpXtvsbU4qDABvciqIbFXG4F40r4fP6ilU94Q3L6qADyQH1Cdmj4";
 
 /* ---------------------------
-   Main component - patched version (no localStorage)
+   Main component - now integrated with InquiryContext
    --------------------------- */
 export default function InquiryListPage({ inquiryparams }) {
   const { state } = useLocation();
   const { logout } = useAuth();
   const navigate = useNavigate();
+  const toast = useToast();
 
-  // --- mock data fallback (used when server returns 500/404 or response is empty) ---
-  const mockInquiries = useMemo(
-    () =>
-      Array.from({ length: 42 }, (_, i) => ({
-        id: `Inq${i + 1}`,
-        qty: 10 + i,
-        customer: `Customer Name with longer text that may overflow (${i + 1})`,
-        broker:
-          i % 2 === 0 ? `Broker Name with longer text too (${i + 1})` : null,
-        sales: `Sales Person (${i + 1})`,
-        status:
-          i % 3 === 0 ? "High Priority" : i % 3 === 1 ? "Pending" : "Normal",
-        items: [
-          {
-            id: 1,
-            name: `Item A${i + 1}`,
-            qty: 20 + i,
-            rate: 100 + i,
-            grade: (i % 5) + 1,
-            winding: 10 + (i % 3) * 5,
-            pq: i % 2 === 0 ? "Yes" : "No",
-            clq: i % 2 === 1 ? "Yes" : "No",
-            lastRate: 95 + i,
-          },
-          {
-            id: 2,
-            name: `Item B${i + 1}`,
-            qty: 15 + i,
-            rate: 120 + i,
-            grade: (i % 5) + 1,
-            winding: 15 + (i % 3) * 5,
-            pq: i % 2 === 0 ? "Yes" : "No",
-            clq: i % 2 === 1 ? "Yes" : "No",
-            lastRate: 110 + i,
-          },
-        ],
-      })),
-    []
-  );
+  // Context-driven data & helpers
+  const {
+    inquiries: ctxInquiries,
+    loading: ctxLoading,
+    error: ctxError,
+    usingMock,
+    fetchInquiries,
+    fetchInquiryById,
+    refreshFromApi,
+    applyMockFallback,
+  } = useInquiries();
 
-  // -------------------------
-  // In-memory cached/fetched list state
-  // -------------------------
-  const [inquiriesData, setInquiriesData] = useState(null); // array or null
-  const [loadingList, setLoadingList] = useState(false);
-
-  // incoming nav state fallback
+  // incoming nav state fallback (single inquiry or array)
   const incomingState = state?.inquiry ?? null;
 
-  // Helper: fetch list from backend (NO localStorage)
-  const fetchListFromApi = useCallback(async () => {
-    setLoadingList(true);
-    try {
-      if (!API_BASE) {
-        console.warn("[fetchListFromApi] API_BASE is not defined");
-      }
-      const res = await axios.get(
-        `${API_BASE}/api/inquiryRoutes/getInquiries`,
-        {
-          timeout: 8000,
-        }
-      );
-      const list = res?.data?.data ?? res?.data ?? [];
-      console.debug(
-        "[fetchListFromApi] fetched list length:",
-        Array.isArray(list) ? list.length : typeof list
-      );
-      if (Array.isArray(list) && list.length > 0) {
-        setInquiriesData(list);
-        return list;
-      } else {
-        console.warn(
-          "[fetchListFromApi] API returned empty or unexpected list, falling back to mock"
-        );
-        setInquiriesData(mockInquiries);
-        return mockInquiries;
-      }
-    } catch (err) {
-      console.error("Failed to fetch inquiries from API", err?.message ?? err);
-      // fallback: use mock data (in-memory) only
-      console.info(
-        "[fetchListFromApi] falling back to mock data (no localStorage)"
-      );
-      setInquiriesData(mockInquiries);
-      return mockInquiries;
-    } finally {
-      setLoadingList(false);
-    }
-  }, [mockInquiries]);
-
-  // On mount: load from incoming state -> API
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      // If navigation passed an entire list array, use it (in-memory)
-      if (Array.isArray(incomingState) && incomingState.length > 0) {
-        setInquiriesData(incomingState);
-        return;
-      }
-
-      // last: fetch from API
-      await fetchListFromApi();
-    })();
-
-    return () => {
-      mounted = false;
-    };
-  }, [incomingState, fetchListFromApi]);
-
-  /* -------------------------
-     original inquiry selection fallback:
-     - If location.state contains a single inquiry object we keep it in-memory only
-  ------------------------- */
-  // NOTE: previously saved to localStorage; now we only keep selected in navigation state
-  // (no action required here)
-
-  /* -------------------------
-     Derive the array used by the UI (inquiries)
-     Priority:
-       1) if location.state holds an array -> use it
-       2) else use inquiriesData (fetched in-memory)
-       3) else fallback to mock array (so some devices always see data)
-  ------------------------- */
-  const inquiries = useMemo(() => {
-    if (Array.isArray(incomingState)) return incomingState;
-    if (Array.isArray(inquiriesData)) return inquiriesData;
-    return [];
-  }, [incomingState, inquiriesData]);
-
-  /* -------------------------
-     Standard UI state (mostly unchanged)
-  ------------------------- */
-  const { user } = useAuth();
+  // Local UI state
   const [isSubscribed, setIsSubscribed] = useState(false);
   const { colorMode, toggleColorMode } = useColorMode();
   const [filter, setFilter] = useState("All");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-
-  // viewMode: removed localStorage persistence; default to 'grid'
   const [viewMode, setViewMode] = useState("grid");
-
   const pageSize = 6;
   const searchTimerRef = useRef(null);
+  const { isOpen, onOpen, onClose } = useDisclosure();
+  const [history, setHistory] = useState([]);
+
+  // UI Colors
+  const pageBg = useColorModeValue("gray.100", "gray.900");
+  const cardBg = useColorModeValue("white", "gray.800");
+  const borderColor = useColorModeValue("gray.200", "gray.600");
+  const textColor = useColorModeValue("gray.800", "gray.100");
+  const textHeadingColor = useColorModeValue("black", "white");
+  const subText = useColorModeValue("gray.600", "gray.400");
+
+  // Derived inquiries array priority:
+  // 1) incomingState array, 2) context inquiries, 3) empty []
+  const inquiries = useMemo(() => {
+    if (Array.isArray(incomingState)) return incomingState;
+    if (Array.isArray(ctxInquiries)) return ctxInquiries;
+    return [];
+  }, [incomingState, ctxInquiries]);
+
+  // Loading state: prefer context loading
+  const loadingList = ctxLoading;
+
+  // Initial fetch on mount if context has no data and no incoming state
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      if (Array.isArray(incomingState) && incomingState?.length > 0) return;
+      // trigger context fetch (context handles dedupe & caching)
+      await fetchInquiries().catch(() => {});
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [incomingState, fetchInquiries]);
+
+  // Search handler with debounce
   const handleSearch = useCallback((e) => {
     const value = e.target.value;
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
@@ -376,20 +304,17 @@ export default function InquiryListPage({ inquiryparams }) {
     };
   }, []);
 
+  // Select inquiry -> navigate to detail (pass object in state when available)
   const handleSelectInquiry = useCallback(
     (inquiry) => {
-      console.debug("handleSelectInquiry ->", inquiry && inquiry.id);
       navigate(`/InquiryDetailPage/${encodeURIComponent(inquiry.id)}`, {
         state: { inquiry },
       });
-      // no localStorage persistence for selected inquiry
     },
     [navigate]
   );
 
-  /* -------------------------
-     Filtering + pagination + UI helpers
-  ------------------------- */
+  // Filtering + pagination
   const filteredInquiries = useMemo(() => {
     const q = (search || "").toLowerCase();
     return (inquiries || []).filter((inq) => {
@@ -404,7 +329,7 @@ export default function InquiryListPage({ inquiryparams }) {
 
   const totalPages = Math.max(
     1,
-    Math.ceil((filteredInquiries.length || 0) / pageSize)
+    Math.ceil((filteredInquiries?.length || 0) / pageSize)
   );
   const startIndex = (page - 1) * pageSize;
   const paginatedInquiries = filteredInquiries.slice(
@@ -412,6 +337,7 @@ export default function InquiryListPage({ inquiryparams }) {
     startIndex + pageSize
   );
 
+  // Push subscription status (unchanged)
   useEffect(() => {
     if ("serviceWorker" in navigator && "PushManager" in window) {
       (async () => {
@@ -436,7 +362,8 @@ export default function InquiryListPage({ inquiryparams }) {
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY),
       });
-      await fetch(`${API_BASE}/api/push/subscribe`, {
+      // server call intentionally uses fetch to keep previous behaviour
+      await fetch(`/api/push/subscribe`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(sub),
@@ -458,18 +385,7 @@ export default function InquiryListPage({ inquiryparams }) {
     }
   };
 
-  /* -------------------------
-     UI Colors + Drawer state
-  ------------------------- */
-  const pageBg = useColorModeValue("gray.100", "gray.900");
-  const cardBg = useColorModeValue("white", "gray.800");
-  const borderColor = useColorModeValue("gray.200", "gray.600");
-  const textColor = useColorModeValue("gray.800", "gray.100");
-  const textHeadingColor = useColorModeValue("black", "white");
-  const subText = useColorModeValue("gray.600", "gray.400");
-  const { isOpen, onOpen, onClose } = useDisclosure();
-  const [history, setHistory] = useState([]);
-
+  // Notifications from service worker (unchanged)
   useEffect(() => {
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.addEventListener("message", (event) => {
@@ -481,128 +397,270 @@ export default function InquiryListPage({ inquiryparams }) {
     }
   }, []);
 
+  // Refresh entire list from API (bypass cache). Shows toast on success/failure.
+  const handleRefreshList = async () => {
+    const previousUsingMock = Boolean(usingMock);
+    const ok = await refreshFromApi().catch(() => false);
+    if (ok) {
+      if (previousUsingMock && !usingMock) {
+        toast({
+          title: "Switched from mock to API data",
+          status: "success",
+          duration: 3000,
+          isClosable: true,
+        });
+      } else {
+        toast({
+          title: "Refreshed from API",
+          status: "success",
+          duration: 2000,
+          isClosable: true,
+        });
+      }
+    } else {
+      toast({
+        title: "API refresh failed",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+      });
+    }
+  };
+
   /* -------------------------
      Render
   ------------------------- */
   return (
     <Flex minH="100vh" bg={pageBg} direction="column">
+      {/* Improved header */}
       <Box
         position="sticky"
         top="0"
-        zIndex="10"
+        zIndex="sticky"
         bg={pageBg}
-        p={4}
-        shadow="md"
+        p={{ base: 3, md: 4 }}
+        boxShadow="sm"
         borderBottom="1px solid"
         borderColor={borderColor}
+        style={{ backdropFilter: "saturate(120%) blur(6px)" }}
       >
-        <HStack justify="space-between" w="100%">
-          <Heading
-            size="md"
-            bgClip="text"
-            fontWeight="bold"
-            color={textHeadingColor}
-          >
-            Welcome
-            <br />
-            <Text as="span" fontWeight="normal" fontSize="sm">
-              Here are your Pending Inquiries
-            </Text>
-          </Heading>
-
-          <HStack spacing={2}>
-            <Box position="relative">
-              <Tooltip
-                label={
-                  isSubscribed
-                    ? "View Notifications"
-                    : "Subscribe to notifications"
-                }
+        <VStack spacing={3} align="stretch" w="100%">
+          {/* Row 1: Title + actions */}
+          <HStack justify="space-between" w="100%" align="center">
+            <Box>
+              <Heading
+                size={{ base: "sm", md: "md" }}
+                fontWeight="700"
+                color={textHeadingColor}
+                lineHeight="1.05"
               >
+                Pending Inquiries
+              </Heading>
+              <Text fontSize="xs" color={subText} mt={1}>
+                Your active inquiries and quick actions
+              </Text>
+            </Box>
+
+            <HStack spacing={{ base: 1, md: 3 }}>
+              {usingMock && (
+                <Badge colorScheme="yellow" variant="subtle" px={2} py={1}>
+                  Mock Data
+                </Badge>
+              )}
+
+              <Tooltip label="Refresh list (API)" openDelay={300}>
                 <IconButton
-                  aria-label="Push Notifications"
-                  icon={<Icon as={Bell} />}
-                  onClick={onOpen}
+                  aria-label="Refresh list"
+                  icon={<RepeatIcon />}
+                  size="sm"
+                  onClick={handleRefreshList}
                   variant="ghost"
-                  size="lg"
-                  rounded="full"
+                  rounded="md"
+                  _hover={{
+                    bg: useColorModeValue("gray.100", "whiteAlpha.100"),
+                  }}
                 />
               </Tooltip>
 
-              {history.length > 0 && (
-                <Badge
-                  colorScheme="red"
-                  rounded="full"
-                  position="absolute"
-                  top="1"
-                  right="1"
-                  fontSize="0.7em"
-                  px={1.5}
+              <Tooltip
+                label={`Switch to ${
+                  colorMode === "light" ? "dark" : "light"
+                } mode`}
+                openDelay={300}
+              >
+                <IconButton
+                  aria-label="Toggle theme"
+                  icon={colorMode === "light" ? <MoonIcon /> : <SunIcon />}
+                  onClick={toggleColorMode}
+                  size="sm"
+                  variant="ghost"
+                  rounded="md"
+                />
+              </Tooltip>
+
+              <Box position="relative">
+                <Tooltip
+                  label={
+                    isSubscribed
+                      ? "View Notifications"
+                      : "Subscribe to notifications"
+                  }
+                  openDelay={300}
                 >
-                  {history.length}
-                </Badge>
-              )}
-            </Box>
+                  <IconButton
+                    aria-label="Notifications"
+                    icon={<Icon as={Bell} />}
+                    onClick={onOpen}
+                    size="sm"
+                    variant="ghost"
+                    rounded="md"
+                  />
+                </Tooltip>
+                {history?.length > 0 && (
+                  <Badge
+                    colorScheme="red"
+                    rounded="full"
+                    position="absolute"
+                    top="-5px"
+                    right="-5px"
+                    fontSize="xs"
+                    px={2}
+                  >
+                    {history?.length}
+                  </Badge>
+                )}
+              </Box>
 
-            <Tooltip
-              label={`Switch to ${
-                colorMode === "light" ? "dark" : "light"
-              } mode`}
-            >
-              <IconButton
-                aria-label="Toggle theme"
-                icon={colorMode === "light" ? <MoonIcon /> : <SunIcon />}
-                onClick={toggleColorMode}
-                variant="ghost"
-                size="lg"
-                rounded="full"
-              />
-            </Tooltip>
-            <Tooltip label="Logout">
-              <IconButton
-                aria-label="Logout"
-                icon={<LogOut />}
-                onClick={() => {
-                  logout();
-                  navigate("/");
-                }}
-                variant="ghost"
-                size="xs"
-                rounded="full"
-                colorScheme="red"
-              />
-            </Tooltip>
+              <Tooltip label="Logout" openDelay={300}>
+                <IconButton
+                  aria-label="Logout"
+                  icon={<LogOut />}
+                  onClick={() => {
+                    logout();
+                    navigate("/");
+                  }}
+                  size="sm"
+                  variant="ghost"
+                  colorScheme="red"
+                  rounded="md"
+                />
+              </Tooltip>
+            </HStack>
           </HStack>
-        </HStack>
 
-        <HStack mt={4} spacing={4}>
-          <Input
-            placeholder="Search by ID or Customer"
-            onChange={handleSearch}
-            bg={cardBg}
-            borderColor={borderColor}
-            maxW="max-content"
-            _focus={{ borderColor: "#1E3C7B" }}
-          />
-          <Select
-            w="max-content"
-            value={filter}
-            onChange={(e) => {
-              setFilter(e.target.value);
-              setPage(1);
-            }}
-            bg={cardBg}
-            borderColor={borderColor}
-            color={textColor}
-            _focus={{ borderColor: "#7B1E1E" }}
+          {/* Row 2: Search + filters */}
+          <Grid
+            templateColumns={{ base: "1fr", md: "minmax(0, 1fr) 320px" }}
+            gap={3}
+            alignItems="center"
           >
-            <option>All</option>
-            <option>High Priority</option>
-            <option>Normal</option>
-            <option>Pending</option>
-          </Select>
-          <Button leftIcon={<Search2Icon />} colorScheme="blue" />
-        </HStack>
+            <InputGroup maxW="100%">
+              <InputLeftElement pointerEvents="none">
+                <Search2Icon
+                  color={useColorModeValue("gray.500", "gray.400")}
+                />
+              </InputLeftElement>
+              <Input
+                placeholder="Search by ID or Customer"
+                onChange={handleSearch}
+                bg={cardBg}
+                borderColor={borderColor}
+                _focus={{ borderColor: "#1E3C7B" }}
+                aria-label="Search inquiries"
+              />
+              <InputRightElement>
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  onClick={() => {
+                    setSearch("");
+                    setPage(1);
+                  }}
+                  aria-label="Clear search"
+                >
+                  Clear
+                </Button>
+              </InputRightElement>
+            </InputGroup>
+
+            <HStack
+              spacing={2}
+              justify={{ base: "flex-start", md: "flex-end" }}
+            >
+              <Select
+                w="160px"
+                value={filter}
+                onChange={(e) => {
+                  setFilter(e.target.value);
+                  setPage(1);
+                }}
+                bg={cardBg}
+                borderColor={borderColor}
+                color={textColor}
+                size="sm"
+                _focus={{ borderColor: "#7B1E1E" }}
+                aria-label="Filter status"
+              >
+                <option>All</option>
+                <option>High Priority</option>
+                <option>Normal</option>
+                <option>Pending</option>
+              </Select>
+
+              <Button
+                leftIcon={<Search2Icon />}
+                size="sm"
+                colorScheme="blue"
+                onClick={() => {
+                  setPage(1);
+                }}
+                aria-label="Run search"
+              >
+                Search
+              </Button>
+            </HStack>
+          </Grid>
+
+          {/* Optional: error / mock controls */}
+          {ctxError && (
+            <Box>
+              <Alert status="error" borderRadius="md">
+                <AlertIcon />
+                <Box flex="1">
+                  <AlertTitle>Failed to fetch from API</AlertTitle>
+                  <AlertDescription display="block">
+                    {ctxError?.message || "Unknown error"}
+                  </AlertDescription>
+                  <HStack mt={3}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => fetchInquiries().catch(() => {})}
+                    >
+                      Retry
+                    </Button>
+                    <Button
+                      size="sm"
+                      colorScheme="yellow"
+                      onClick={() => {
+                        applyMockFallback();
+                        toast({
+                          title: "Mock entries applied",
+                          description: "UI is now showing mock data.",
+                          status: "info",
+                          duration: 3000,
+                          isClosable: true,
+                        });
+                      }}
+                    >
+                      Show Mock Entries
+                    </Button>
+                  </HStack>
+                </Box>
+              </Alert>
+            </Box>
+          )}
+        </VStack>
       </Box>
 
       <Box flex="1" p={8}>
@@ -636,10 +694,10 @@ export default function InquiryListPage({ inquiryparams }) {
             <Spinner size="lg" />
             <Text ml={3}>Loading inquiries…</Text>
           </Flex>
-        ) : paginatedInquiries.length > 0 ? (
+        ) : paginatedInquiries?.length > 0 ? (
           viewMode === "grid" ? (
             <SimpleGrid columns={{ base: 1, md: 2 }} spacing={6}>
-              {paginatedInquiries.map((inq, index) => {
+              {paginatedInquiries?.map((inq, index) => {
                 const inquiry = normalizeInquiry(inq, index);
                 return (
                   <InquiryCard
@@ -724,7 +782,7 @@ export default function InquiryListPage({ inquiryparams }) {
             <Text fontSize="sm">
               Try adjusting your filters or search query.
             </Text>
-            <Button mt={4} onClick={() => fetchListFromApi()}>
+            <Button mt={4} onClick={() => fetchInquiries().catch(() => {})}>
               Retry Fetch
             </Button>
           </Flex>
@@ -734,9 +792,9 @@ export default function InquiryListPage({ inquiryparams }) {
       {totalPages > 1 && (
         <HStack justify="space-between" px={8} py={4}>
           <Text fontSize="sm" color={subText}>
-            Showing {Math.min(filteredInquiries.length, startIndex + 1)} –{" "}
-            {Math.min(startIndex + pageSize, filteredInquiries.length)} of{" "}
-            {filteredInquiries.length}
+            Showing {Math.min(filteredInquiries?.length, startIndex + 1)} –{" "}
+            {Math.min(startIndex + pageSize, filteredInquiries?.length)} of{" "}
+            {filteredInquiries?.length}
           </Text>
 
           <HStack spacing={1}>
@@ -810,7 +868,7 @@ export default function InquiryListPage({ inquiryparams }) {
                       rounded="full"
                     />
                   </Tooltip>
-                  {history.length > 0 && (
+                  {history?.length > 0 && (
                     <Badge
                       colorScheme="red"
                       rounded="full"
@@ -820,7 +878,7 @@ export default function InquiryListPage({ inquiryparams }) {
                       fontSize="0.7em"
                       px={1.5}
                     >
-                      {history.length}
+                      {history?.length}
                     </Badge>
                   )}
                 </Box>
@@ -852,7 +910,7 @@ export default function InquiryListPage({ inquiryparams }) {
               </HStack>
             </HStack>
 
-            {history.length > 0 && (
+            {history?.length > 0 && (
               <Button
                 size="xs"
                 variant="ghost"
@@ -863,7 +921,7 @@ export default function InquiryListPage({ inquiryparams }) {
               </Button>
             )}
 
-            {history.length === 0 ? (
+            {history?.length === 0 ? (
               <Flex
                 align="center"
                 justify="center"

@@ -1,4 +1,5 @@
 // InquiryDetailPage.js
+import React, { useEffect } from "react";
 import {
   Box,
   Flex,
@@ -7,8 +8,22 @@ import {
   Text,
   HStack,
   Icon,
+  Button,
+  Spinner,
+  useDisclosure,
+  Modal,
+  ModalOverlay,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
+  ModalCloseButton,
+  Badge,
+  useToast,
+  Spacer,
 } from "@chakra-ui/react";
-import { StarIcon } from "@chakra-ui/icons";
+import { StarIcon, RepeatIcon } from "@chakra-ui/icons";
+import { useInquiries } from "./InquiryContext"; // adjust path if needed
 
 const inquiries = [
   {
@@ -52,23 +67,106 @@ const inquiries = [
 ];
 
 export default function InquiryDetailPage() {
+  const {
+    inquiries: ctxInquiries,
+    loading,
+    error,
+    usingMock,
+    refreshFromApi,
+    applyMockFallback,
+  } = useInquiries();
+
+  const {
+    isOpen: isErrorOpen,
+    onOpen: onErrorOpen,
+    onClose: onErrorClose,
+  } = useDisclosure();
+
+  const toast = useToast();
+
+  // Open modal when an error appears and not already using mock
+  useEffect(() => {
+    if (error && !usingMock) {
+      onErrorOpen();
+    }
+  }, [error, usingMock, onErrorOpen]);
+
+  const handleRefresh = async () => {
+    const ok = await refreshFromApi();
+    if (ok) {
+      toast({
+        title: "Refreshed",
+        description: "Loaded data from API.",
+        status: "success",
+        duration: 3000,
+        isClosable: true,
+      });
+    } else {
+      toast({
+        title: "Refresh failed",
+        description: "Could not load data from API. Still using current data.",
+        status: "warning",
+        duration: 3000,
+        isClosable: true,
+      });
+    }
+  };
+
+  const handleShowMocks = () => {
+    applyMockFallback();
+    onErrorClose();
+    toast({
+      title: "Using mock entries",
+      description: "Local mock data enabled until API is available.",
+      status: "info",
+      duration: 3000,
+      isClosable: true,
+    });
+  };
+
+  // decide which list to display: API/context list if available, otherwise keep the original static array
+  const displayList =
+    Array.isArray(ctxInquiries) && ctxInquiries.length > 0
+      ? ctxInquiries
+      : inquiries;
+
   return (
     <Flex minH="100vh" bg="gray.50" align="center" justify="center" p={0}>
-      <Box bg="white" rounded="2xl" shadow="xl" p={6} w="100%" maxW="500px">
-        {/* Title */}
-        <Heading
-          size="lg"
-          mb={6}
-          textAlign="center"
-          bgGradient="linear(to-r, #1E3C7B, #7B1E1E)"
-          bgClip="text"
-        >
-          List of Pending Inquiries
-        </Heading>
+      <Box bg="white" rounded="2xl" shadow="xl" p={6} w="100%" maxW="760px">
+        {/* Title row with Refresh and mock-badge */}
+        <Flex align="center" mb={4} gap={3}>
+          <Heading
+            size="lg"
+            textAlign="center"
+            bgGradient="linear(to-r, #1E3C7B, #7B1E1E)"
+            bgClip="text"
+          >
+            List of Pending Inquiries
+          </Heading>
+
+          <Spacer />
+
+          {usingMock && (
+            <Badge colorScheme="orange" mr={2}>
+              Using mock data
+            </Badge>
+          )}
+
+          <HStack spacing={2}>
+            <Button
+              leftIcon={<RepeatIcon />}
+              onClick={handleRefresh}
+              isLoading={loading}
+              loadingText="Refreshing"
+              size="sm"
+              variant="outline"
+            ></Button>
+          </HStack>
+        </Flex>
 
         {/* Inquiry Cards */}
         <VStack spacing={4} align="stretch">
-          {inquiries.map((inq, index) => (
+          {displayList.map((inq, index) => (
             <Box
               key={inq.id}
               p={4}
@@ -101,6 +199,45 @@ export default function InquiryDetailPage() {
           ))}
         </VStack>
       </Box>
+
+      {/* Error modal: ask whether to show mock entries */}
+      <Modal isOpen={isErrorOpen} onClose={onErrorClose} isCentered>
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>Failed to load data</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            <Text mb={2}>There was an error fetching data from the API.</Text>
+            {error?.status && (
+              <Text fontSize="sm" color="gray.500" mb={2}>
+                Error {error.status} — {error.message}
+              </Text>
+            )}
+            <Text fontSize="sm" color="gray.600">
+              You can continue with local mock entries, or try refreshing to
+              attempt loading API data again.
+            </Text>
+          </ModalBody>
+
+          <ModalFooter>
+            <Button variant="ghost" mr={3} onClick={onErrorClose}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                onErrorClose();
+                handleRefresh();
+              }}
+              mr={3}
+            >
+              Try Refresh
+            </Button>
+            <Button colorScheme="blue" onClick={handleShowMocks}>
+              Show Mock Entries
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </Flex>
   );
 }
