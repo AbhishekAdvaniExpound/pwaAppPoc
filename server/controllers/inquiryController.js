@@ -200,8 +200,8 @@ exports.getInquiries = async (req, res) => {
     const resp = await axiosGetWithRetries(url, {
       auth,
       headers: {
-        Host: parsedHost,
-        Accept: "application/json, text/plain, */*",
+        // Host: parsedHost,
+        // Accept: "application/json, text/plain, */*",
       },
       responseType: "json",
     });
