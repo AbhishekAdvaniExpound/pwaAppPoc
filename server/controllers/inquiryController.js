@@ -186,23 +186,8 @@ exports.getInquiries = async (req, res) => {
 
     console.log({ auth });
 
-    // explicit host header to help SNI/virtual-hosted services
-    const parsedHost = (() => {
-      try {
-        return new URL(url).host.split(":")[0];
-      } catch {
-        return undefined;
-      }
-    })();
-
-    console.log({ parsedHost });
-
-    const resp = await axiosGetWithRetries(url, {
+    const resp = await axios.get(url, {
       auth,
-      headers: {
-        // Host: parsedHost,
-        // Accept: "application/json, text/plain, */*",
-      },
       responseType: "json",
     });
 
