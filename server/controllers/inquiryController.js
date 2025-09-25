@@ -40,58 +40,189 @@ const inquiries = Array.from({ length: 42 }, (_, i) => ({
   ],
 }));
 
-// exports.getInquiries - patched with robust, non-blocking notify and diagnostics
+// getInquiries.hardened.js
+
+// Tunables (via env)
+const MAX_RETRIES = parseInt(process.env.MAX_RETRIES || "3", 10);
+const PER_TRY_TIMEOUT_MS = parseInt(
+  process.env.PER_TRY_TIMEOUT_MS || "5000",
+  10
+);
+const OVERALL_TIMEOUT_MS = parseInt(
+  process.env.OVERALL_TIMEOUT_MS || "15000",
+  10
+);
+const BACKOFF_BASE_MS = parseInt(process.env.BACKOFF_BASE_MS || "300", 10);
+const BACKOFF_MULT = parseFloat(process.env.BACKOFF_MULT || "2");
+const CACHE_TTL_MS = parseInt(
+  process.env.CACHE_TTL_MS || `${5 * 60 * 1000}`,
+  10
+); // 5 minutes
+const VERIFY_SSL = (process.env.VERIFY_SSL || "false").toLowerCase() === "true";
+
+// Module-level cache to return stale data on upstream failure
+let lastInquiriesCache = { ts: 0, data: null };
+
+// Shared keepAlive agent
+const sharedHttpsAgent = new https.Agent({
+  keepAlive: true,
+  rejectUnauthorized: VERIFY_SSL, // default false for dev; set true in prod
+});
+
+// Utility: sleep with jitter
+const sleep = (ms) =>
+  new Promise((r) =>
+    setTimeout(r, ms + Math.floor(Math.random() * Math.min(200, ms)))
+  );
+
+// Decide if error is retryable
+function isRetryable(err) {
+  if (!err) return false;
+  if (err.code) {
+    const codes = [
+      "ECONNRESET",
+      "ETIMEDOUT",
+      "EAI_AGAIN",
+      "ENOTFOUND",
+      "ECONNREFUSED",
+      "ECONNABORTED",
+    ];
+    if (codes.includes(err.code)) return true;
+  }
+  if (!err.response) return true; // network / TLS issues
+  const status = err.response.status;
+  if (status >= 500 || status === 429) return true;
+  return false;
+}
+
+// Perform request with retries, per-try timeout and overall timeout.
+async function axiosGetWithRetries(url, axiosOptions = {}) {
+  const overallController = new AbortController();
+  const overallTimer = setTimeout(
+    () => overallController.abort(),
+    OVERALL_TIMEOUT_MS
+  );
+
+  try {
+    let attempt = 0;
+    let backoff = BACKOFF_BASE_MS;
+
+    while (attempt < MAX_RETRIES) {
+      attempt += 1;
+
+      // Per-try controller
+      const tryController = new AbortController();
+      // if overall aborts, abort this try
+      overallController.signal.addEventListener(
+        "abort",
+        () => tryController.abort(),
+        { once: true }
+      );
+
+      try {
+        const resp = await axios.get(url, {
+          httpsAgent: sharedHttpsAgent,
+          timeout: PER_TRY_TIMEOUT_MS, // secondary guard
+          signal: tryController.signal,
+          ...axiosOptions,
+        });
+        clearTimeout(overallTimer);
+        return resp;
+      } catch (err) {
+        // if overall aborted, convert to deterministic error
+        if (overallController.signal.aborted) {
+          const e = new Error("Overall timeout exceeded");
+          e.code = "OVERALL_TIMEOUT";
+          throw e;
+        }
+
+        // not retryable or last attempt -> rethrow
+        if (!isRetryable(err) || attempt >= MAX_RETRIES) {
+          throw err;
+        }
+
+        // wait backoff then retry
+        await sleep(backoff);
+        backoff = Math.floor(backoff * BACKOFF_MULT);
+      }
+    }
+
+    throw new Error("Retries exhausted");
+  } finally {
+    clearTimeout(overallTimer);
+  }
+}
+
+// Handler (drop-in replacement)
 exports.getInquiries = async (req, res) => {
   try {
-    const apiResp = await axios.get(
-      `${BaseUrlBackend}/zinq/getinq?sap-client=120`,
-      {
-        httpsAgent: new https.Agent({ rejectUnauthorized: false }),
-        auth: {
-          username: process.env.SAP_USERNAME,
-          password: process.env.SAP_PASSWORD,
-        },
-      }
-    );
+    // BaseUrlBackend should be set (no trailing port; ngrok host or SAP host)
+    const base =
+      typeof BaseUrlBackend !== "undefined"
+        ? BaseUrlBackend
+        : process.env.BASE_URL_BACKEND;
+    if (!base) {
+      return res
+        .status(500)
+        .json({ success: false, message: "BaseUrlBackend not configured" });
+    }
 
-    // Use a distinct variable name to avoid shadowing/ confusion with the mock above
-    const remoteInquiries = apiResp?.data ?? [];
-    const inquriesLength = Array.isArray(remoteInquiries)
+    const sapClient = process.env.SAP_CLIENT || "120";
+    const url = `${base.replace(
+      /\/$/,
+      ""
+    )}/zinq/getinq?sap-client=${encodeURIComponent(sapClient)}`;
+
+    const auth = {
+      username: process.env.SAP_USERNAME || "",
+      password: process.env.SAP_PASSWORD || "",
+    };
+
+    // explicit host header to help SNI/virtual-hosted services
+    const parsedHost = (() => {
+      try {
+        return new URL(url).host.split(":")[0];
+      } catch {
+        return undefined;
+      }
+    })();
+
+    const resp = await axiosGetWithRetries(url, {
+      auth,
+      headers: {
+        Host: parsedHost,
+        Accept: "application/json, text/plain, */*",
+      },
+      responseType: "json",
+    });
+
+    const remoteInquiries = resp?.data ?? [];
+    const inquiriesLength = Array.isArray(remoteInquiries)
       ? remoteInquiries.length
       : 1;
 
-    console.log("getInquiries: fetched from SAP, count =", inquriesLength);
+    // update cache on success
+    lastInquiriesCache = { ts: Date.now(), data: remoteInquiries };
 
-    // Fire-and-forget notify: wrap in Promise.resolve().then so both sync throws and async rejects are caught
-    Promise.resolve()
-      .then(async () => {
-        try {
-          // Log the payload we will send
-          const payload = {
-            title: "Latest Inquiries successfully fetched.",
-            body: `Latest ${inquriesLength} Inquiries successfully fetched.`,
-            // optional: attach small meta so notifyHelper can log/route
-            meta: { source: "getInquiries", count: inquriesLength },
-          };
-          console.log("getInquiries: calling notifyAll with payload:", payload);
+    // fire-and-forget notify (non-blocking, errors logged)
+    (async () => {
+      try {
+        const payload = {
+          title: "Latest Inquiries successfully fetched.",
+          body: `Latest ${inquiriesLength} Inquiries successfully fetched.`,
+          meta: { source: "getInquiries", count: inquiriesLength },
+        };
+        console.log("getInquiries: notify payload:", payload);
+        await notifyAll(payload);
+        console.log("getInquiries: notifyAll completed");
+      } catch (err) {
+        console.error(
+          "getInquiries: notifyAll error (non-fatal):",
+          err && err.stack ? err.stack : err
+        );
+      }
+    })();
 
-          const notifyResult = await notifyAll(payload);
-
-          // If your notifyAll returns something useful, log it
-          console.log("getInquiries: notifyAll result:", notifyResult);
-        } catch (err) {
-          console.error(
-            "getInquiries: Push send error:",
-            err && err.stack ? err.stack : err
-          );
-        }
-      })
-      .catch((err) => {
-        // This outer catch should rarely fire, but keep it as a safeguard
-        console.error("getInquiries: unexpected notify wrapper error:", err);
-      });
-
-    // Send response back to client (do not wait for notifyAll)
     return res.status(200).json({
       success: true,
       total: Array.isArray(remoteInquiries) ? remoteInquiries.length : 1,
@@ -102,10 +233,30 @@ exports.getInquiries = async (req, res) => {
       "Error fetching inquiries:",
       error && error.stack ? error.stack : error
     );
-    return res.status(500).json({
+
+    // serve cached data if fresh enough
+    const age = Date.now() - (lastInquiriesCache.ts || 0);
+    if (lastInquiriesCache.data && age <= CACHE_TTL_MS) {
+      console.warn(
+        "Serving cached inquiries due to upstream failure (age ms):",
+        age
+      );
+      return res.status(200).json({
+        success: true,
+        total: Array.isArray(lastInquiriesCache.data)
+          ? lastInquiriesCache.data.length
+          : 1,
+        data: lastInquiriesCache.data,
+        warning: "served-from-cache",
+      });
+    }
+
+    const code = error && error.code ? error.code : "UPSTREAM_ERROR";
+    return res.status(502).json({
       success: false,
-      message: "Failed to fetch inquiries",
+      message: "Failed to fetch inquiries from upstream",
       error: error?.message || String(error),
+      code,
     });
   }
 };
