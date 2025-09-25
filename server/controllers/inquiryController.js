@@ -49,7 +49,7 @@ const PER_TRY_TIMEOUT_MS = parseInt(
   10
 );
 const OVERALL_TIMEOUT_MS = parseInt(
-  process.env.OVERALL_TIMEOUT_MS || "15000",
+  process.env.OVERALL_TIMEOUT_MS || "150000",
   10
 );
 const BACKOFF_BASE_MS = parseInt(process.env.BACKOFF_BASE_MS || "300", 10);
