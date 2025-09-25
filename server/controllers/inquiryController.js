@@ -290,6 +290,10 @@ exports.getInquiryDetail = async (req, res) => {
 
     const sapClient = req.query.sapClient || process.env.SAP_CLIENT || "120";
     const sapHost = (process.env.SAP_BASE_URL || "").replace(/\/+$/, "");
+    if (!sapHost) {
+      console.error("FATAL: SAP_BASE_URL not configured");
+      process.exit(1);
+    }
     const path = `/zinq/getinqdetail`;
     const url = `${sapHost}${path}?sap-client=${encodeURIComponent(
       sapClient
@@ -402,6 +406,10 @@ exports.getNegotiation = async (req, res) => {
       "120"
     ).toString();
     const sapHost = (process.env.SAP_BASE_URL || "").replace(/\/+$/, "");
+    if (!sapHost) {
+      console.error("FATAL: SAP_BASE_URL not configured");
+      process.exit(1);
+    }
     const path = `/zinq/negotiation`;
 
     // pad inqitem to 6 digits if numeric (POSNR style)
@@ -533,6 +541,10 @@ exports.postNegotiation = async (req, res) => {
 
     const sapClient = process.env.SAP_CLIENT || "120";
     const sapHost = (process.env.SAP_BASE_URL || "").replace(/\/+$/, "");
+    if (!sapHost) {
+      console.error("FATAL: SAP_BASE_URL not configured");
+      process.exit(1);
+    }
     const url = `${sapHost}/zinq/negotiation?sap-client=${sapClient}`;
 
     // headers
