@@ -45,7 +45,7 @@ const inquiries = Array.from({ length: 42 }, (_, i) => ({
 // Tunables (via env)
 const MAX_RETRIES = parseInt(process.env.MAX_RETRIES || "3", 10);
 const PER_TRY_TIMEOUT_MS = parseInt(
-  process.env.PER_TRY_TIMEOUT_MS || "5000",
+  process.env.PER_TRY_TIMEOUT_MS || "150000",
   10
 );
 const OVERALL_TIMEOUT_MS = parseInt(
