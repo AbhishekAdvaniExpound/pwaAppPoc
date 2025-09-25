@@ -313,7 +313,7 @@ exports.getInquiryDetail = async (req, res) => {
     // Top-level axios options
     const axiosOptions = {
       headers,
-      timeout: Number(process.env.SAP_REQUEST_TIMEOUT_MS || 15000),
+      timeout: Number(process.env.SAP_REQUEST_TIMEOUT_MS || 5000),
       // If you want axios to not throw on non-2xx and handle response manually:
       // validateStatus: () => true
     };
@@ -440,7 +440,7 @@ exports.getNegotiation = async (req, res) => {
     // axios options
     const axiosOptions = {
       headers,
-      timeout: Number(process.env.SAP_REQUEST_TIMEOUT_MS || 15000),
+      timeout: Number(process.env.SAP_REQUEST_TIMEOUT_MS || 5000),
       maxBodyLength: Infinity,
     };
 
@@ -556,7 +556,7 @@ exports.postNegotiation = async (req, res) => {
       url,
       headers,
       data: body,
-      timeout: Number(process.env.SAP_REQUEST_TIMEOUT_MS || 15000),
+      timeout: Number(process.env.SAP_REQUEST_TIMEOUT_MS || 5000),
     };
 
     // allow self-signed certs in DEV
@@ -572,7 +572,7 @@ exports.postNegotiation = async (req, res) => {
       data: resp.data,
     });
   } catch (err) {
-    console.error("postNegotiation error:", err.message || err);
+    // console.error("postNegotiation error:", err.message || err);
     console.error("SAP fetch error", {
       code: err.code,
       errno: err.errno,
