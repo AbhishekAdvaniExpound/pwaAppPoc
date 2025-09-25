@@ -573,6 +573,19 @@ exports.postNegotiation = async (req, res) => {
     });
   } catch (err) {
     console.error("postNegotiation error:", err.message || err);
+    console.error("SAP fetch error", {
+      code: err.code,
+      errno: err.errno,
+      syscall: err.syscall,
+      address: err.address,
+      port: err.port,
+      url: err?.config?.url,
+      hostHeader: err?.config?.headers?.Host,
+      respStatus: err?.response?.status,
+      respData: err?.response?.data,
+      stack: err.stack?.split("\n").slice(0, 3).join("\n"),
+    });
+
     return res.status(500).json({
       error: "Failed to save negotiation",
       details: err.message,
