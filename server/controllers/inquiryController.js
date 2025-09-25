@@ -161,6 +161,9 @@ exports.getInquiries = async (req, res) => {
       typeof BaseUrlBackend !== "undefined"
         ? BaseUrlBackend
         : process.env.BASE_URL_BACKEND;
+
+    console.log({ base });
+
     if (!base) {
       return res
         .status(500)
@@ -168,15 +171,20 @@ exports.getInquiries = async (req, res) => {
     }
 
     const sapClient = process.env.SAP_CLIENT || "120";
+    console.log({ sapClient });
     const url = `${base.replace(
       /\/$/,
       ""
     )}/zinq/getinq?sap-client=${encodeURIComponent(sapClient)}`;
 
+    console.log({ url });
+
     const auth = {
       username: process.env.SAP_USERNAME || "",
       password: process.env.SAP_PASSWORD || "",
     };
+
+    console.log({ auth });
 
     // explicit host header to help SNI/virtual-hosted services
     const parsedHost = (() => {
@@ -187,6 +195,8 @@ exports.getInquiries = async (req, res) => {
       }
     })();
 
+    console.log({ parsedHost });
+
     const resp = await axiosGetWithRetries(url, {
       auth,
       headers: {
@@ -196,7 +206,10 @@ exports.getInquiries = async (req, res) => {
       responseType: "json",
     });
 
+    console.log({ resp });
+
     const remoteInquiries = resp?.data ?? [];
+    console.log({ remoteInquiries });
     const inquiriesLength = Array.isArray(remoteInquiries)
       ? remoteInquiries.length
       : 1;
@@ -252,6 +265,7 @@ exports.getInquiries = async (req, res) => {
     }
 
     const code = error && error.code ? error.code : "UPSTREAM_ERROR";
+    console.log({ code });
     return res.status(502).json({
       success: false,
       message: "Failed to fetch inquiries from upstream",
