@@ -9,7 +9,12 @@ const loginRoutes = require("./routes/loginRoutes");
 const inquiryRoutes = require("./routes/inquiryRoutes");
 
 const app = express();
-app.use(cors());
+app.use(
+  cors({
+    origin: ["https://192.168.3.32:44300" /* other allowed origins */],
+    credentials: true,
+  })
+);
 app.use(express.json());
 connectDB(); //  Connect MongoDB
 
